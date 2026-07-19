@@ -5,8 +5,22 @@ import { DirectUpload } from "@rails/activestorage";
 // file, renders a pending chip, and injects hidden inputs with signed blob ids
 // so MessagesController receives message[attachments][].
 export default class extends Controller {
-  static targets = ["fileInput", "pending", "form"];
+  static targets = ["fileInput", "pending"];
   static values = { url: String }; // rails_direct_uploads_url
+
+  connect() {
+    this.inflight = 0;
+    this.handleKeydown = this.handleKeydown.bind(this);
+    this.inputTarget?.addEventListener("keydown", this.handleKeydown, {
+      capture: true,
+    });
+  }
+
+  disconnect() {
+    this.inputTarget?.removeEventListener("keydown", this.handleKeydown, {
+      capture: true,
+    });
+  }
 
   pick() {
     this.fileInputTarget.click();
@@ -38,10 +52,14 @@ export default class extends Controller {
   upload(files) {
     for (const file of files) {
       const chip = this.renderChip(file);
+      this.inflight += 1;
+      this.updateSubmitState();
       new DirectUpload(file, this.urlValue).create((error, blob) => {
         if (error) {
           chip.querySelector("[data-status]").textContent =
             chip.dataset.errorLabel;
+          this.inflight -= 1;
+          this.updateSubmitState();
           return;
         }
         chip.dataset.signedId = blob.signed_id;
@@ -51,6 +69,8 @@ export default class extends Controller {
         input.name = "message[attachments][]";
         input.value = blob.signed_id;
         chip.appendChild(input);
+        this.inflight -= 1;
+        this.updateSubmitState();
       });
     }
   }
@@ -69,9 +89,36 @@ export default class extends Controller {
     return chip;
   }
 
-  clear() {
+  // action: turbo:submit-end->attachment#clear (clears pending chips after a
+  // successful send only — a failed submission (e.g. validation error) must
+  // preserve the user's staged uploads so they aren't silently lost)
+  clear(event) {
+    if (event?.detail && event.detail.success === false) return;
     this.pendingTarget.innerHTML = "";
-  } // action: turbo:submit-end->attachment#clear (clears pending chips after send)
+  }
+
+  updateSubmitState() {
+    const submit = this.element.querySelector("[data-chat-target='submit']");
+    if (!submit) return;
+    if (this.inflight > 0) {
+      submit.disabled = true;
+      submit.title = this.uploadingWaitLabel;
+    } else {
+      submit.disabled = false;
+      submit.removeAttribute("title");
+    }
+  }
+
+  handleKeydown(event) {
+    if (this.inflight > 0 && event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }
+
+  get inputTarget() {
+    return this.element.querySelector("[data-chat-target='input']");
+  }
 
   escape(s) {
     const d = document.createElement("div");
@@ -85,5 +132,12 @@ export default class extends Controller {
 
   get removeLabel() {
     return this.element.dataset.attachmentRemoveLabel || "remove";
+  }
+
+  get uploadingWaitLabel() {
+    return (
+      this.element.dataset.attachmentUploadingWaitLabel ||
+      "Please wait for uploads to finish"
+    );
   }
 }

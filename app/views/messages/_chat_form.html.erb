@@ -13,6 +13,7 @@
      data-attachment-uploading-label="<%= t(".attachment_uploading_label") %>"
      data-attachment-remove-label="<%= t(".attachment_remove_label") %>"
      data-attachment-error-label="<%= t(".attachment_error_label") %>"
+     data-attachment-uploading-wait-label="<%= t(".attachment_uploading_wait_label") %>"
      data-action="dragover->attachment#dragover drop->attachment#drop paste->attachment#paste">
   <% model = chat && chat.persisted? ? [chat, Message.new] : Chat.new %>
 

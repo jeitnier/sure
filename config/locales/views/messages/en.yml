@@ -14,3 +14,4 @@ en:
       attachment_uploading_label: "Uploading…"
       attachment_remove_label: "Remove attachment"
       attachment_error_label: "Upload failed"
+      attachment_uploading_wait_label: "Please wait for attachments to finish uploading"
