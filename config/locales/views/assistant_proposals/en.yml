@@ -9,6 +9,11 @@ en:
       records:
         one: "1 record"
         other: "%{count} records"
+      samples:
+        name: "Name"
+        date: "Date"
+        amount: "Amount"
+        change: "Change"
       apply: "Apply"
       discard: "Discard"
       undo: "Undo"

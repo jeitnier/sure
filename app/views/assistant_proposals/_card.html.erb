@@ -20,6 +20,31 @@
     <p class="text-xs text-warning mb-1"><%= note %></p>
   <% end %>
 
+  <% if %w[proposed stale].include?(proposal.status) && Array(proposal.preview["samples"]).any? %>
+    <div class="overflow-x-auto mb-2">
+      <table class="w-full text-xs text-left">
+        <thead>
+          <tr class="text-secondary">
+            <th class="pr-2 py-1 font-medium"><%= t(".samples.name") %></th>
+            <th class="pr-2 py-1 font-medium"><%= t(".samples.date") %></th>
+            <th class="pr-2 py-1 font-medium"><%= t(".samples.amount") %></th>
+            <th class="pr-2 py-1 font-medium"><%= t(".samples.change") %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% Array(proposal.preview["samples"]).each do |sample| %>
+            <tr class="border-t border-secondary">
+              <td class="pr-2 py-1 text-primary"><%= sample["name"] %></td>
+              <td class="pr-2 py-1 text-secondary"><%= sample["date"] %></td>
+              <td class="pr-2 py-1 text-secondary"><%= sample["amount"] %></td>
+              <td class="pr-2 py-1 text-secondary"><%= sample["before"] %> → <%= sample["after"] %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+
   <% case proposal.status %>
   <% when "proposed" %>
     <div class="flex gap-2 mt-2">
