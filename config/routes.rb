@@ -200,6 +200,10 @@ Rails.application.routes.draw do
     member do
       post :retry
     end
+
+    collection do
+      get :mentions, controller: "chats/mentions", action: :index
+    end
   end
 
   resources :assistant_proposals, only: [] do
