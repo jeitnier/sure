@@ -75,8 +75,9 @@ model can narrate it; they also broadcast the card.
    - Resolves scope via `Current.family` transactions (entries join for date/account).
 2. `propose_category_merge`
    - params: `source_category_ids[]`, `target_category_id` (nullable → sources' transactions
-     become uncategorized, i.e. plain delete), `delete_empty: bool`
-   - Wraps `Category#replace_and_destroy!` per source at apply time.
+     become uncategorized, i.e. plain delete)
+   - Wraps `Category#replace_and_destroy!` per source at apply time. Sources with zero
+     transactions are simply destroyed by the same path — no separate flag.
 3. `propose_merchant_merge`
    - params: `source_merchant_ids[]`, `target_merchant_id`
    - Wraps `Merchant::Merger` at apply time (family-scoped validation is built into it).
