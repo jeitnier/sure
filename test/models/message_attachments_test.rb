@@ -19,6 +19,10 @@ class MessageAttachmentsTest < ActiveSupport::TestCase
     assert build_message_with_blob(content_type: "image/png").valid?
   end
 
+  test "accepts csv under limits" do
+    assert build_message_with_blob(content_type: "text/csv").valid?
+  end
+
   test "rejects disallowed content type" do
     msg = build_message_with_blob(content_type: "application/zip")
     assert_not msg.valid?

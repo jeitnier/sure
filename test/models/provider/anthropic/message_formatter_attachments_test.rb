@@ -79,4 +79,63 @@ class Provider::Anthropic::MessageFormatterAttachmentsTest < ActiveSupport::Test
     types = messages.last[:content].map { |b| b[:type] }
     assert_equal [ "text", "document" ], types
   end
+
+  test "csv current turn emits a text-source document block with contents and title" do
+    msg = UserMessage.create!(chat: @chat, content: "what's in this csv?", ai_model: "claude-sonnet-4-5", status: "complete")
+    csv_blob = ActiveStorage::Blob.create_and_upload!(
+      io: StringIO.new("name,amount
+rent,1200
+"), filename: "budget.csv", content_type: "text/csv")
+    msg.attachments.attach(csv_blob)
+
+    messages = Provider::Anthropic::MessageFormatter.new(
+      prompt: msg.content, current_message: msg, conversation_history: [], function_results: []).build
+
+    block = messages.last[:content].last
+    assert_equal "document", block[:type]
+    assert_equal "text", block[:source][:type]
+    assert_equal "text/plain", block[:source][:media_type]
+    assert_equal "name,amount
+rent,1200
+", block[:source][:data]
+    assert_equal "budget.csv", block[:title]
+  end
+
+  test "csv over a tiny payload cap degrades to a marker" do
+    msg = UserMessage.create!(chat: @chat, content: "what's in this csv?", ai_model: "claude-sonnet-4-5", status: "complete")
+    csv_blob = ActiveStorage::Blob.create_and_upload!(
+      io: StringIO.new("name,amount
+rent,1200
+"), filename: "budget.csv", content_type: "text/csv")
+    msg.attachments.attach(csv_blob)
+
+    messages = Provider::Anthropic::MessageFormatter.new(
+      prompt: msg.content, current_message: msg, conversation_history: [],
+      function_results: [], max_attachment_payload: 5).build
+
+    types = messages.last[:content].map { |b| b[:type] }
+    assert_equal [ "text" ], types
+    assert_includes messages.last[:content].first[:text], "[attached: budget.csv"
+  end
+
+  test "csv raw bytes latch subsequent files even if individually small" do
+    msg = UserMessage.create!(chat: @chat, content: "two files", ai_model: "claude-sonnet-4-5", status: "complete")
+    csv_content = "name,amount
+" + ("x" * 200)
+    big_csv_blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new(csv_content), filename: "big.csv", content_type: "text/csv")
+    small_blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("hi"), filename: "small.png", content_type: "image/png")
+    msg.attachments.attach(big_csv_blob)
+    msg.attachments.attach(small_blob)
+
+    small_encoded_bytesize = Base64.strict_encode64("hi").bytesize
+    messages = Provider::Anthropic::MessageFormatter.new(
+      prompt: msg.content, current_message: msg, conversation_history: [],
+      function_results: [], max_attachment_payload: small_encoded_bytesize).build
+
+    content = messages.last[:content]
+    types = content.map { |b| b[:type] }
+    assert_equal [ "text" ], types
+    assert_includes content.first[:text], "[attached: big.csv"
+    assert_includes content.first[:text], "[attached: small.png"
+  end
 end

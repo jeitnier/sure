@@ -19,6 +19,7 @@ class Provider::Anthropic::MessageFormatter
   #   after it) degrades to a `[attached: <filename> — omitted, too large for
   #   this request]` marker appended to the text block instead.
   DOCUMENT_MEDIA_TYPE = "application/pdf"
+  CSV_MEDIA_TYPE = "text/csv"
 
   def initialize(prompt:, current_message: nil, conversation_history: [], function_results: [], max_attachment_payload: 25.megabytes)
     @prompt = prompt
@@ -98,6 +99,24 @@ class Provider::Anthropic::MessageFormatter
           next
         end
 
+        # CSVs are sent as plain text (no base64 inflation), so the cap check
+        # uses the raw downloaded byte size instead of the base64-encoded
+        # size every other attachment type uses.
+        if attachment.content_type.to_s == CSV_MEDIA_TYPE
+          raw = attachment.download
+          payload_bytes = raw.bytesize
+
+          if running_bytes + payload_bytes > @max_attachment_payload
+            overflowed = true
+            overflow_filenames << attachment.filename.to_s
+            next
+          end
+
+          blocks << csv_attachment_block(attachment, raw)
+          running_bytes += payload_bytes
+          next
+        end
+
         encoded = Base64.strict_encode64(attachment.download)
 
         if running_bytes + encoded.bytesize > @max_attachment_payload
@@ -135,6 +154,18 @@ class Provider::Anthropic::MessageFormatter
           source: { type: "base64", media_type: DOCUMENT_MEDIA_TYPE, data: encoded_data }
         }
       end
+    end
+
+    # CSVs are sent to Anthropic as a plain-text document block (not base64)
+    # so the model can read the contents directly. Force UTF-8 and scrub
+    # invalid byte sequences so a stray non-UTF-8 byte in the file can't
+    # blow up the request.
+    def csv_attachment_block(attachment, raw_data)
+      {
+        type: "document",
+        source: { type: "text", media_type: "text/plain", data: raw_data.dup.force_encoding("UTF-8").scrub },
+        title: attachment.filename.to_s
+      }
     end
 
     # ToolCall records have no association-level order; enforce
