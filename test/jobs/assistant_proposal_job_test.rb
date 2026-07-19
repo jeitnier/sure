@@ -22,6 +22,12 @@ class AssistantProposalJobTest < ActiveJob::TestCase
   end
 
   test "apply recategorize updates records, snapshots, locks, transitions" do
+    # Force a SQL-NULL locked_attributes on one transaction ahead of apply --
+    # `locked_attributes = locked_attributes || ?::jsonb` silently no-ops
+    # against NULL, so this guards the COALESCE fix at lock_category_on!.
+    Transaction.where(id: @txns.last.id).update_all("locked_attributes = NULL")
+    assert_nil @txns.last.reload.locked_attributes
+
     p = make_proposal(kind: "bulk_recategorize",
       params: { "filter" => { "merchant_names" => [ "AMZN" ] }, "new_category" => "CatB" })
     AssistantProposalJob.perform_now(p.id, "apply")
@@ -31,6 +37,7 @@ class AssistantProposalJobTest < ActiveJob::TestCase
     @txns.each { |t| assert_equal @cat_b.id, t.reload.category_id }
     assert_equal @cat_a.id, p.changes_journal["records"][@txns.first.id]
     assert @txns.first.reload.locked_attributes.key?("category_id"), "category_id should be locked"
+    assert @txns.last.reload.locked_attributes.key?("category_id"), "category_id should be locked even when locked_attributes started NULL"
   end
 
   test "apply with drift marks stale and writes nothing" do
@@ -78,5 +85,73 @@ class AssistantProposalJobTest < ActiveJob::TestCase
     AssistantProposalJob.perform_now(p.id, "apply")
     assert_equal "failed", p.reload.status
     assert_match(/boom/, p.error)
+  end
+
+  test "apply is atomic: a failure after domain writes rolls back the domain writes too" do
+    p = make_proposal(kind: "bulk_recategorize",
+      params: { "filter" => { "merchant_names" => [ "AMZN" ] }, "new_category" => "CatB" })
+
+    # Inject a failure precisely into the applier's success-path proposal
+    # update (status: "applied") -- the write that happens *after* the
+    # per-kind domain mutation but must still be inside the same DB
+    # transaction as that mutation.
+    #
+    # A plain singleton-method stub on `p` doesn't work here: the job does
+    # its own `AssistantProposal.find(proposal_id)`, a fresh instance, so a
+    # per-object stub is never seen by the code under test. Instead, prepend
+    # a module on the class that only intercepts the exact success-path call
+    # signature (status: "applied") -- every other #update! call (notably
+    # the job's rescue, which marks status: "failed") falls through to the
+    # real ActiveRecord::Base#update! via `super`, so we aren't faking away
+    # the job's own error-handling path. `armed` disarms the intercept once
+    # this test is done so later tests in the same process aren't affected.
+    armed = true
+    interceptor = Module.new do
+      define_method(:update!) do |*args, **kwargs|
+        if armed && kwargs[:status] == "applied"
+          raise ActiveRecord::StatementInvalid, "boom"
+        else
+          super(*args, **kwargs)
+        end
+      end
+    end
+    AssistantProposal.prepend(interceptor)
+
+    AssistantProposalJob.perform_now(p.id, "apply")
+    armed = false
+
+    # Domain write rolled back: transactions still point at the original category.
+    @txns.each { |t| assert_equal @cat_a.id, t.reload.category_id }
+    @txns.each { |t| assert_not t.reload.locked_attributes.key?("category_id"), "lock should have rolled back too" }
+
+    # Job's rescue still ran on the SAME record and persisted the failure.
+    assert_equal "failed", p.reload.status
+    assert_match(/boom/, p.error)
+    assert_nil p.applied_at
+    assert_equal({}, p.changes_journal)
+  end
+
+  test "merchant_merge journals ProviderMerchant sources as not-destroyed and FamilyMerchant sources as destroyed" do
+    target = @family.merchants.create!(name: "Amazon.com")
+    provider_merchant = ProviderMerchant.create!(name: "AMZN-PROVIDER-\#{SecureRandom.hex(4)}", source: "plaid")
+    provider_txn = @account.entries.create!(name: "provider amzn", date: Date.current, amount: 5, currency: "USD",
+      entryable: Transaction.new(category: @cat_a, merchant: provider_merchant)).entryable
+
+    p = make_proposal(kind: "merchant_merge",
+      params: { "source_merchant_ids" => [ @merchant.id, provider_merchant.id ], "target_merchant_id" => target.id })
+    AssistantProposalJob.perform_now(p.id, "apply")
+    p.reload
+
+    assert_equal "applied", p.status
+    @txns.each { |t| assert_equal target.id, t.reload.merchant_id }
+    assert_equal target.id, provider_txn.reload.merchant_id
+
+    # FamilyMerchant source was destroyed by Merchant::Merger; ProviderMerchant was only re-pointed.
+    assert_nil Merchant.find_by(id: @merchant.id)
+    assert ProviderMerchant.find_by(id: provider_merchant.id).present?
+
+    snapshots_by_id = p.changes_journal["sources"].index_by { |s| s["attrs"]["id"] }
+    assert_equal true, snapshots_by_id[@merchant.id]["destroyed"]
+    assert_equal false, snapshots_by_id[provider_merchant.id]["destroyed"]
   end
 end

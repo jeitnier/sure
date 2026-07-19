@@ -15,15 +15,26 @@ class AssistantProposal::Applier
       return
     end
 
-    journal =
-      case proposal.kind
-      when "bulk_recategorize" then apply_recategorize(resolver)
-      when "category_merge"    then apply_category_merge(resolver)
-      when "merchant_merge"    then apply_merchant_merge(resolver)
+    # Domain writes + proposal bookkeeping (status/journal/applied_at) must
+    # commit together. Splitting them left a window where a crash after the
+    # domain writes but before the proposal update would leave financial rows
+    # mutated with no journal ("applied but unjournaled" — breaks undo).
+    ActiveRecord::Base.transaction do
+      journal =
+        case proposal.kind
+        when "bulk_recategorize" then apply_recategorize(resolver)
+        when "category_merge"    then apply_category_merge(resolver)
+        when "merchant_merge"    then apply_merchant_merge(resolver)
+        end
+
+      # Preserve the state-machine guarantee transition_to! used to give us,
+      # now that we collapse the two writes into a single update!.
+      unless AssistantProposal::TRANSITIONS.fetch(proposal.status, []).include?("applied")
+        raise AssistantProposal::InvalidTransition, "#{proposal.status} -> applied"
       end
 
-    proposal.update!(changes_journal: journal, applied_at: Time.current)
-    proposal.transition_to!("applied")
+      proposal.update!(status: "applied", changes_journal: journal, applied_at: Time.current)
+    end
   end
 
   def undo!
@@ -34,7 +45,7 @@ class AssistantProposal::Applier
   private
     def lock_category_on!(ids)
       Transaction.where(id: ids).update_all([
-        "locked_attributes = locked_attributes || ?::jsonb",
+        "locked_attributes = COALESCE(locked_attributes, '{}'::jsonb) || ?::jsonb",
         { "category_id" => Time.current.iso8601 }.to_json
       ])
     end
@@ -43,13 +54,10 @@ class AssistantProposal::Applier
       family = proposal.family
       target = resolver.target_category ||
                family.categories.create!(name: proposal.params["new_category"].to_s.strip, color: Category::COLORS.sample)
-      records = nil
-      ActiveRecord::Base.transaction do
-        scope = resolver.affected_scope
-        records = scope.pluck(:id, :category_id).to_h
-        scope.update_all(category_id: target.id, updated_at: Time.current)
-        lock_category_on!(records.keys)
-      end
+      scope = resolver.affected_scope
+      records = scope.pluck(:id, :category_id).to_h
+      scope.update_all(category_id: target.id, updated_at: Time.current)
+      lock_category_on!(records.keys)
       { "op" => "recategorize", "new_category_id" => target.id, "records" => records }
     end
 
@@ -58,15 +66,13 @@ class AssistantProposal::Applier
       sources = resolver.source_categories
       records = {}
       source_snapshots = []
-      ActiveRecord::Base.transaction do
-        sources.each do |source|
-          txn_ids = source.transactions.pluck(:id)
-          txn_ids.each { |id| records[id] = source.id }
-          source_snapshots << { "attrs" => source.attributes, "transaction_ids" => txn_ids }
-          source.replace_and_destroy!(target)
-        end
-        lock_category_on!(records.keys)
+      sources.each do |source|
+        txn_ids = source.transactions.pluck(:id)
+        txn_ids.each { |id| records[id] = source.id }
+        source_snapshots << { "attrs" => source.attributes, "transaction_ids" => txn_ids }
+        source.replace_and_destroy!(target)
       end
+      lock_category_on!(records.keys)
       { "op" => "category_merge", "target_category_id" => target&.id,
         "sources" => source_snapshots, "records" => records }
     end
@@ -75,13 +81,11 @@ class AssistantProposal::Applier
       target = resolver.target_merchant
       sources = resolver.source_merchants
       records = {}
-      snapshots = sources.map { |m| { "attrs" => m.attributes } }
-      ActiveRecord::Base.transaction do
-        sources.each do |source|
-          Transaction.where(merchant_id: source.id).pluck(:id).each { |id| records[id] = source.id }
-        end
-        Merchant::Merger.new(family: proposal.family, target_merchant: target, source_merchants: sources).merge!
+      snapshots = sources.map { |m| { "attrs" => m.attributes, "destroyed" => m.is_a?(FamilyMerchant) } }
+      sources.each do |source|
+        Transaction.where(merchant_id: source.id).pluck(:id).each { |id| records[id] = source.id }
       end
+      Merchant::Merger.new(family: proposal.family, target_merchant: target, source_merchants: sources).merge!
       { "op" => "merchant_merge", "target_merchant_id" => target.id,
         "sources" => snapshots, "records" => records }
     end
