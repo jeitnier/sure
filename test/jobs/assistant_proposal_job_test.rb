@@ -154,4 +154,112 @@ class AssistantProposalJobTest < ActiveJob::TestCase
     assert_equal true, snapshots_by_id[@merchant.id]["destroyed"]
     assert_equal false, snapshots_by_id[provider_merchant.id]["destroyed"]
   end
+
+  test "undo recategorize restores old categories and reports conflicts" do
+    p = make_proposal(kind: "bulk_recategorize",
+      params: { "filter" => { "merchant_names" => [ "AMZN" ] }, "new_category" => "CatB" })
+    AssistantProposalJob.perform_now(p.id, "apply")
+    # user manually edits one record after apply -> conflict
+    @txns.first.update!(category: @family.categories.create!(name: "Manual", color: "#db5a54"))
+    p.reload.transition_to!("undoing")
+    AssistantProposalJob.perform_now(p.id, "undo")
+    p.reload
+    assert_equal "undone", p.status
+    assert_equal @cat_a.id, @txns.second.reload.category_id
+    assert_equal "Manual", @txns.first.reload.category.name   # conflict left alone
+    assert_match(/2 restored/, p.changes_journal["undo_summary"])
+    assert_match(/1 skipped/, p.changes_journal["undo_summary"])
+  end
+
+  test "undo category_merge recreates the destroyed source category" do
+    p = make_proposal(kind: "category_merge",
+      params: { "source_category_ids" => [ @cat_a.id ], "target_category_id" => @cat_b.id })
+    AssistantProposalJob.perform_now(p.id, "apply")
+    p.reload.transition_to!("undoing")
+    AssistantProposalJob.perform_now(p.id, "undo")
+    p.reload
+    assert_equal "undone", p.status
+    restored = @family.categories.find_by(name: "CatA")
+    assert restored, "source category should be recreated"
+    @txns.each { |t| assert_equal restored.id, t.reload.category_id }
+  end
+
+  test "undo merchant_merge recreates source merchant and restores assignments" do
+    target = @family.merchants.create!(name: "Amazon Official")
+    p = make_proposal(kind: "merchant_merge",
+      params: { "source_merchant_ids" => [ @merchant.id ], "target_merchant_id" => target.id })
+    AssistantProposalJob.perform_now(p.id, "apply")
+    p.reload.transition_to!("undoing")
+    AssistantProposalJob.perform_now(p.id, "undo")
+    p.reload
+    assert_equal "undone", p.status
+    restored = @family.merchants.find_by(name: "AMZN")
+    assert restored
+    @txns.each { |t| assert_equal restored.id, t.reload.merchant_id }
+  end
+
+  test "undo merchant_merge with a ProviderMerchant source does not duplicate it, only recreates the FamilyMerchant" do
+    target = @family.merchants.create!(name: "Amazon.com")
+    provider_merchant = ProviderMerchant.create!(name: "AMZN-PROVIDER-#{SecureRandom.hex(4)}", source: "plaid")
+    provider_txn = @account.entries.create!(name: "provider amzn", date: Date.current, amount: 5, currency: "USD",
+      entryable: Transaction.new(category: @cat_a, merchant: provider_merchant)).entryable
+
+    p = make_proposal(kind: "merchant_merge",
+      params: { "source_merchant_ids" => [ @merchant.id, provider_merchant.id ], "target_merchant_id" => target.id })
+    AssistantProposalJob.perform_now(p.id, "apply")
+
+    provider_merchant_count_after_apply = ProviderMerchant.count
+
+    p.reload.transition_to!("undoing")
+    AssistantProposalJob.perform_now(p.id, "undo")
+    p.reload
+
+    assert_equal "undone", p.status
+
+    restored_family_merchant = @family.merchants.find_by(name: "AMZN")
+    assert restored_family_merchant, "destroyed FamilyMerchant source should be recreated"
+    assert_kind_of FamilyMerchant, restored_family_merchant
+
+    # No duplicate ProviderMerchant: the persisting source was mapped by identity, not recreated.
+    assert_equal provider_merchant_count_after_apply, ProviderMerchant.count
+    assert ProviderMerchant.find_by(id: provider_merchant.id).present?
+
+    @txns.each { |t| assert_equal restored_family_merchant.id, t.reload.merchant_id }
+    assert_equal provider_merchant.id, provider_txn.reload.merchant_id
+  end
+
+  test "undo is atomic: a failure after restoring records rolls back the restore too" do
+    p = make_proposal(kind: "bulk_recategorize",
+      params: { "filter" => { "merchant_names" => [ "AMZN" ] }, "new_category" => "CatB" })
+    AssistantProposalJob.perform_now(p.id, "apply")
+    p.reload.transition_to!("undoing")
+
+    # Same interceptor pattern as the apply atomicity test above: intercept only
+    # the undo success-path call (status: "undone") so the restore's own
+    # rollback behavior is exercised, while the job's rescue (status: "failed")
+    # still falls through to the real update!.
+    armed = true
+    interceptor = Module.new do
+      define_method(:update!) do |*args, **kwargs|
+        if armed && kwargs[:status] == "undone"
+          raise ActiveRecord::StatementInvalid, "boom"
+        else
+          super(*args, **kwargs)
+        end
+      end
+    end
+    AssistantProposal.prepend(interceptor)
+
+    AssistantProposalJob.perform_now(p.id, "undo")
+    armed = false
+
+    # Restore rolled back: transactions still point at the post-apply category.
+    @txns.each { |t| assert_equal @cat_b.id, t.reload.category_id }
+
+    # Job's rescue still ran on the SAME record and persisted the failure.
+    assert_equal "failed", p.reload.status
+    assert_match(/boom/, p.error)
+    assert_nil p.undone_at
+    assert_not p.changes_journal.key?("undo_summary")
+  end
 end

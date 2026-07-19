@@ -38,8 +38,40 @@ class AssistantProposal::Applier
   end
 
   def undo!
-    # Task 6: reverse-apply using changes_journal snapshots.
-    raise NotImplementedError, "AssistantProposal::Applier#undo! is implemented in Task 6"
+    journal = proposal.changes_journal
+    restored = 0
+    skipped = 0
+
+    # Mirrors apply!: the restore + the final status/journal write must
+    # commit together, ending in a single guarded update! rather than a
+    # separate transition_to! call (see apply! for the "applied but
+    # unjournaled" rationale this avoids).
+    ActiveRecord::Base.transaction do
+      id_map = recreate_sources(journal)   # old_id => restored/identity record id (categories/merchants); {} for recategorize
+      attr_name, applied_value_for = undo_target(journal, id_map)
+
+      journal.fetch("records", {}).each do |txn_id, old_value|
+        txn = Transaction.find_by(id: txn_id)
+        if txn.nil?
+          skipped += 1
+          next
+        end
+        if txn.public_send(attr_name) != applied_value_for.call(txn_id)
+          skipped += 1
+          next
+        end
+        txn.update_columns(attr_name => id_map.fetch(old_value, old_value), updated_at: Time.current)
+        restored += 1
+      end
+
+      summary = "#{restored} restored, #{skipped} skipped (changed after apply or missing)"
+
+      unless AssistantProposal::TRANSITIONS.fetch(proposal.status, []).include?("undone")
+        raise AssistantProposal::InvalidTransition, "#{proposal.status} -> undone"
+      end
+
+      proposal.update!(status: "undone", changes_journal: journal.merge("undo_summary" => summary), undone_at: Time.current)
+    end
   end
 
   private
@@ -88,5 +120,47 @@ class AssistantProposal::Applier
       Merchant::Merger.new(family: proposal.family, target_merchant: target, source_merchants: sources).merge!
       { "op" => "merchant_merge", "target_merchant_id" => target.id,
         "sources" => snapshots, "records" => records }
+    end
+
+    # Recreate destroyed rows; return old_id => new_id map. Sources that
+    # weren't actually destroyed at apply time (ProviderMerchant merge
+    # sources, which Merchant::Merger only re-points and never destroys) map
+    # old_id => old_id (identity) -- the row still exists, so records restore
+    # straight back to it instead of a duplicate.
+    def recreate_sources(journal)
+      case journal["op"]
+      when "category_merge"
+        journal.fetch("sources", []).each_with_object({}) do |src, map|
+          attrs = src["attrs"].except("id", "created_at", "updated_at")
+          map[src["attrs"]["id"]] = proposal.family.categories.create!(attrs).id
+        end
+      when "merchant_merge"
+        journal.fetch("sources", []).each_with_object({}) do |src, map|
+          old_id = src["attrs"]["id"]
+          if src["destroyed"]
+            attrs = src["attrs"].except("id", "created_at", "updated_at")
+            map[old_id] = Merchant.create!(attrs).id
+            # ^ STI: attrs includes "type" (FamilyMerchant) and family_id -- Merchant.create!
+            #   with type attr builds the right subclass (Rails STI `.new`/`.create` switch
+            #   on the inheritance column when present in the attributes hash).
+          else
+            map[old_id] = old_id
+          end
+        end
+      else
+        {}
+      end
+    end
+
+    # Which attribute we changed at apply, and what value we set (for conflict check).
+    def undo_target(journal, _id_map)
+      case journal["op"]
+      when "recategorize"
+        [ :category_id, ->(_) { journal["new_category_id"] } ]
+      when "category_merge"
+        [ :category_id, ->(_) { journal["target_category_id"] } ]
+      when "merchant_merge"
+        [ :merchant_id, ->(_) { journal["target_merchant_id"] } ]
+      end
     end
 end
