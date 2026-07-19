@@ -103,6 +103,13 @@ class AssistantProposal::ResolverTest < ActiveSupport::TestCase
     end
   end
 
+  test "bulk_recategorize with explicit nil new_category raises InvalidParams" do
+    assert_raises(AssistantProposal::Resolver::InvalidParams) do
+      AssistantProposal::Resolver.new(family: @family, kind: "bulk_recategorize",
+        params: { "filter" => { "merchant_names" => [ "AMZN Mktp" ] }, "new_category" => nil }).target_category
+    end
+  end
+
   test "merchant_merge build_preview breakdown groups by merchant name" do
     r = AssistantProposal::Resolver.new(family: @family, kind: "merchant_merge",
       params: { "source_merchant_ids" => [ @m1.id ], "target_merchant_id" => @m2.id })

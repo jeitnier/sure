@@ -51,7 +51,7 @@ class AssistantProposal::Resolver
     @target_category =
       case kind
       when "bulk_recategorize"
-        raise InvalidParams, "new_category required" unless params.key?("new_category")
+        raise InvalidParams, "new_category required" if params["new_category"].blank?
         name_or_id = params["new_category"]
         family.categories.find_by(id: name_or_id) || family.categories.find_by(name: name_or_id) # nil => will create
       when "category_merge"

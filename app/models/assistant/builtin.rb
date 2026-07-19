@@ -76,7 +76,7 @@ class Assistant::Builtin < Assistant::Base
 
     def function_tool_caller
       @function_tool_caller ||= Assistant::FunctionToolCaller.new(
-        functions.map { |fn| fn.new(chat.user) }
+        functions.map { |fn| fn.new(chat.user, chat: chat) }
       )
     end
 

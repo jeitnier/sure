@@ -9,8 +9,9 @@ class Assistant::Function
     end
   end
 
-  def initialize(user)
+  def initialize(user, chat: nil)
     @user = user
+    @chat = chat
   end
 
   def call(params = {})
@@ -44,7 +45,7 @@ class Assistant::Function
   end
 
   private
-    attr_reader :user
+    attr_reader :user, :chat
 
     def build_schema(properties: {}, required: [])
       {
@@ -77,6 +78,36 @@ class Assistant::Function
 
     def family
       user.family
+    end
+
+    def error(key, message)
+      { success: false, error: key, message: message }
+    end
+
+    # Shared by the propose_* functions: validates + stages an AssistantProposal
+    # (never applies anything — apply/undo happen elsewhere via the domain ops).
+    def create_proposal(kind:, params:)
+      return error("no_chat", "Proposals require an active chat context.") unless chat
+
+      resolver = AssistantProposal::Resolver.new(family: family, kind: kind, params: params)
+      if resolver.over_cap?
+        return error("over_cap",
+          "This would affect #{resolver.affected_ids.size} records (max #{AssistantProposal.max_records}). Narrow the filter and try again.")
+      end
+      preview = resolver.build_preview
+      return error("empty", "No records match \u2014 nothing to propose.") if preview["count"].zero?
+
+      proposal = AssistantProposal.create!(
+        family: family, chat: chat, kind: kind,
+        params: params, preview: preview, status: "proposed"
+      )
+      proposal.broadcast_card_append
+
+      { success: true, proposal_id: proposal.id, count: preview["count"],
+        breakdown: preview["breakdown"], notes: preview["notes"],
+        message: "Proposal staged \u2014 the user must click Apply on the card to execute." }
+    rescue AssistantProposal::Resolver::InvalidParams => e
+      error("invalid_params", e.message)
     end
 
     def valid_uuid?(str)

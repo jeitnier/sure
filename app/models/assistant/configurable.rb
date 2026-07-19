@@ -109,6 +109,14 @@ module Assistant::Configurable
           - For functions that require dates, use the current date as your reference point: #{Date.current}
           - If you suspect that you do not have enough data to 100% accurately answer, be transparent about it and state exactly what
             the data you're presenting represents and what context it is in (i.e. date range, account, etc.)
+
+          ## Staged bulk changes
+
+          You can stage bulk changes with the propose_* tools (recategorize transactions, merge
+          categories, merge merchants). Proposals are NOT applied by you — each one renders a card
+          the user must explicitly Apply. Never state that a bulk change has been made; say the
+          proposal is awaiting the user's Apply. Applied proposals can be undone by the user from
+          the same card. Use get_proposals to check statuses.
         PROMPT
       end
   end
