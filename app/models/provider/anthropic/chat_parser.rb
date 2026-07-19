@@ -50,7 +50,7 @@ class Provider::Anthropic::ChatParser
             id: block_value(block, :id),
             call_id: block_value(block, :id),
             function_name: block_value(block, :name),
-            function_args: input.is_a?(String) ? input : input.to_json
+            function_args: input.is_a?(String) ? input.presence || "{}" : (input || {}).to_json
           )
         end
     end
