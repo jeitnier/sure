@@ -138,4 +138,25 @@ rent,1200
     assert_includes content.first[:text], "[attached: big.csv"
     assert_includes content.first[:text], "[attached: small.png"
   end
+
+  test "csv with invalid UTF-8 bytes is scrubbed instead of raising" do
+    msg = UserMessage.create!(chat: @chat, content: "what's in this csv?", ai_model: "claude-sonnet-4-5", status: "complete")
+    invalid_utf8_csv = "name,price\ncaf\xE9,\x224.50\x22\n".b
+    csv_blob = ActiveStorage::Blob.create_and_upload!(
+      io: StringIO.new(invalid_utf8_csv), filename: "bad_encoding.csv", content_type: "text/csv")
+    msg.attachments.attach(csv_blob)
+
+    messages = nil
+    assert_nothing_raised do
+      messages = Provider::Anthropic::MessageFormatter.new(
+        prompt: msg.content, current_message: msg, conversation_history: [], function_results: []).build
+    end
+
+    block = messages.last[:content].last
+    assert_equal "document", block[:type]
+    data = block[:source][:data]
+    assert data.valid_encoding?
+    assert_equal Encoding::UTF_8, data.encoding
+    assert_nothing_raised { data.to_json }
+  end
 end
