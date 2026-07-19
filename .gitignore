@@ -134,3 +134,7 @@ logs/security/
 # Ignore Playwright artifacts
 playwright-report/
 .playwright-mcp
+
+# Fork (jeitnier/sure): track design specs — upstream ignores docs/superpowers/
+!docs/superpowers/
+!docs/superpowers/**
