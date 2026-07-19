@@ -50,7 +50,7 @@ export default class extends Controller {
   handleInputKeyDown(e) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (this.#hasContent()) {
+      if (this.#hasContent() && !this.#uploadsInflight()) {
         this.formTarget.requestSubmit();
       }
     }
@@ -60,9 +60,19 @@ export default class extends Controller {
     return this.inputTarget.value.trim().length > 0;
   }
 
+  // Single source of truth for whether an attachment upload is still in
+  // flight: attachment_controller (attached to the #chat-form wrapper, an
+  // ancestor of this controller's element) sets/clears
+  // `data-uploads-inflight` on that element. See the ownership-rule comment
+  // atop attachment_controller.js — chat_controller owns `disabled`,
+  // attachment_controller only forces it true and pokes us to recompute.
+  #uploadsInflight() {
+    return !!this.element.querySelector("#chat-form")?.dataset.uploadsInflight;
+  }
+
   #updateSubmitState() {
     if (!this.hasSubmitTarget) return;
-    this.submitTarget.disabled = !this.#hasContent();
+    this.submitTarget.disabled = !this.#hasContent() || this.#uploadsInflight();
   }
 
   // Scroll position/anchoring for the messages pane is owned by the

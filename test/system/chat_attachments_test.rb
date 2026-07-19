@@ -70,4 +70,59 @@ class ChatAttachmentsTest < ApplicationSystemTestCase
       assert_selector "[data-attachment-target='pending'] [data-chip]", count: 1
     end
   end
+
+  test "in-flight flag blocks Enter-to-submit and Enter submits once cleared" do
+    # This spies on requestSubmit rather than asserting on rendered message
+    # text: waiting for a message to (not) appear races the real turbo
+    # submit/broadcast round trip, so a slow render could make a broken guard
+    # look like it worked. Counting requestSubmit calls is synchronous and
+    # deterministic -- it directly verifies handleInputKeyDown's decision.
+    visit root_path
+
+    within "#chat-container" do
+      find("[data-chat-target='input']").set("hello while uploading")
+
+      page.execute_script(<<~JS)
+        document.querySelector("#chat-form").dataset.uploadsInflight = "true";
+        window.__submitCalls = 0;
+        document.querySelector("[data-chat-target='form']").requestSubmit = () => { window.__submitCalls += 1; };
+      JS
+
+      find("[data-chat-target='input']").send_keys(:enter)
+      assert_equal 0, page.evaluate_script("window.__submitCalls")
+      assert_equal "hello while uploading", find("[data-chat-target='input']").value
+
+      page.execute_script(<<~JS)
+        const form = document.querySelector("#chat-form");
+        delete form.dataset.uploadsInflight;
+        document.querySelector("[data-chat-target='input']").dispatchEvent(new Event("input", { bubbles: true }));
+      JS
+
+      find("[data-chat-target='input']").send_keys(:enter)
+      assert_equal 1, page.evaluate_script("window.__submitCalls")
+    end
+  end
+
+  test "in-flight flag keeps submit button disabled through an input-event recompute" do
+    visit root_path
+
+    within "#chat-container" do
+      find("[data-chat-target='input']").set("draft")
+
+      page.execute_script(<<~JS)
+        document.querySelector("#chat-form").dataset.uploadsInflight = "true";
+        document.querySelector("[data-chat-target='input']").dispatchEvent(new Event("input", { bubbles: true }));
+      JS
+
+      assert find("[data-chat-target='submit']").disabled?
+
+      page.execute_script(<<~JS)
+        const form = document.querySelector("#chat-form");
+        delete form.dataset.uploadsInflight;
+        document.querySelector("[data-chat-target='input']").dispatchEvent(new Event("input", { bubbles: true }));
+      JS
+
+      assert_not find("[data-chat-target='submit']").disabled?
+    end
+  end
 end

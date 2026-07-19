@@ -4,22 +4,20 @@ import { DirectUpload } from "@rails/activestorage";
 // Composer attachments: click-to-pick, drag-drop, paste. Direct-uploads each
 // file, renders a pending chip, and injects hidden inputs with signed blob ids
 // so MessagesController receives message[attachments][].
+//
+// Ownership rule: chat_controller owns `submit.disabled`. This controller only
+// (a) forces disabled=true while uploads are in flight, via the shared
+// `data-uploads-inflight` flag on this.element (the #chat-form wrapper), and
+// (b) pokes chat_controller to recompute once uploads finish by dispatching an
+// `input` event on the textarea. chat_controller reads the same flag before
+// submitting on Enter and before (re)computing disabled, so there is a single
+// source of truth instead of two controllers racing to set `disabled`.
 export default class extends Controller {
   static targets = ["fileInput", "pending"];
   static values = { url: String }; // rails_direct_uploads_url
 
   connect() {
     this.inflight = 0;
-    this.handleKeydown = this.handleKeydown.bind(this);
-    this.inputTarget?.addEventListener("keydown", this.handleKeydown, {
-      capture: true,
-    });
-  }
-
-  disconnect() {
-    this.inputTarget?.removeEventListener("keydown", this.handleKeydown, {
-      capture: true,
-    });
   }
 
   pick() {
@@ -97,22 +95,25 @@ export default class extends Controller {
     this.pendingTarget.innerHTML = "";
   }
 
+  // Maintains the shared `data-uploads-inflight` flag on this.element
+  // (#chat-form) and forces the submit button's disabled state while uploads
+  // are in flight. chat_controller reads the flag directly for its own
+  // Enter-to-submit and disabled-state logic; when uploads finish here we
+  // dispatch an `input` event so chat_controller immediately recomputes
+  // (rather than only owning disabled while inflight, then leaving it stuck).
   updateSubmitState() {
     const submit = this.element.querySelector("[data-chat-target='submit']");
-    if (!submit) return;
-    if (this.inflight > 0) {
-      submit.disabled = true;
-      submit.title = this.uploadingWaitLabel;
-    } else {
-      submit.disabled = false;
-      submit.removeAttribute("title");
-    }
-  }
 
-  handleKeydown(event) {
-    if (this.inflight > 0 && event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
+    if (this.inflight > 0) {
+      this.element.dataset.uploadsInflight = "true";
+      if (submit) {
+        submit.disabled = true;
+        submit.title = this.uploadingWaitLabel;
+      }
+    } else {
+      delete this.element.dataset.uploadsInflight;
+      if (submit) submit.removeAttribute("title");
+      this.inputTarget?.dispatchEvent(new Event("input", { bubbles: true }));
     }
   }
 
