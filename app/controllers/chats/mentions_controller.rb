@@ -9,10 +9,10 @@ class Chats::MentionsController < ApplicationController
     family = Current.family
 
     render json: {
-      accounts:   family.accounts.where("accounts.name ILIKE ?", like).limit(LIMIT).map { |r| { id: r.id, label: r.name } },
-      categories: family.categories.where("categories.name ILIKE ?", like).limit(LIMIT).map { |r| { id: r.id, label: r.name } },
+      accounts:   family.accounts.where("accounts.name ILIKE ?", like).order(:name).limit(LIMIT).map { |r| { id: r.id, label: r.name } },
+      categories: family.categories.where("categories.name ILIKE ?", like).order(:name).limit(LIMIT).map { |r| { id: r.id, label: r.name } },
       merchants:  mention_merchants(family, like),
-      tags:       family.tags.where("tags.name ILIKE ?", like).limit(LIMIT).map { |r| { id: r.id, label: r.name } }
+      tags:       family.tags.where("tags.name ILIKE ?", like).order(:name).limit(LIMIT).map { |r| { id: r.id, label: r.name } }
     }
   end
 
@@ -21,6 +21,6 @@ class Chats::MentionsController < ApplicationController
     # so mentionable merchants == proposable merchants.
     def mention_merchants(family, like)
       Merchant.where(id: family.merchants.select(:id)).or(Merchant.where(id: family.assigned_merchants.select(:id)))
-              .where("merchants.name ILIKE ?", like).limit(LIMIT).map { |r| { id: r.id, label: r.name } }
+              .where("merchants.name ILIKE ?", like).order(:name).limit(LIMIT).map { |r| { id: r.id, label: r.name } }
     end
 end

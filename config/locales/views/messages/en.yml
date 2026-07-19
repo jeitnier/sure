@@ -4,3 +4,4 @@ en:
     chat_form:
       placeholder: "Ask anything ..."
       disclaimer: "AI responses are informational only. Not financial advice!"
+      mention_button_title: "Mention an account, category, merchant, or tag"

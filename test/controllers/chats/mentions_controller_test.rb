@@ -28,6 +28,18 @@ class Chats::MentionsControllerTest < ActionDispatch::IntegrationTest
     assert_operator JSON.parse(response.body)["categories"].size, :<=, 5
   end
 
+  test "orders each group alphabetically by name" do
+    @family.categories.create!(name: "Zebra Cap", color: "#4da568")
+    @family.categories.create!(name: "Alpha Cap", color: "#db5a54")
+    @family.categories.create!(name: "Mango Cap", color: "#f4a261")
+
+    get mentions_chats_path(q: "cap")
+    assert_response :success
+
+    labels = JSON.parse(response.body)["categories"].map { |c| c["label"] }
+    assert_equal labels.sort, labels
+  end
+
   test "requires auth" do
     sign_out
     get mentions_chats_path(q: "x")
