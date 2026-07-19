@@ -7,6 +7,7 @@ class UserMessage < Message
   validate :validate_attachments, if: -> { attachments.attached? }
 
   after_create_commit :request_response_later
+  after_create_commit :ingest_attachments_later, if: -> { attachments.attached? }
 
   def role
     "user"
@@ -14,6 +15,10 @@ class UserMessage < Message
 
   def request_response_later
     chat.ask_assistant_later(self)
+  end
+
+  def ingest_attachments_later
+    attachments.each { |attachment| AttachmentIngestJob.perform_later(attachment.id) }
   end
 
   def request_response(assistant_message: nil)
