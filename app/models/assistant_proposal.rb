@@ -8,7 +8,8 @@ class AssistantProposal < ApplicationRecord
     "applying" => %w[applied failed stale],
     "applied"  => %w[undoing],
     "undoing"  => %w[undone failed],
-    "stale"    => %w[proposed discarded]
+    "stale"    => %w[proposed discarded],
+    "failed"   => %w[discarded]
   }.freeze
 
   belongs_to :family
@@ -32,7 +33,19 @@ class AssistantProposal < ApplicationRecord
   def transition_to!(new_status)
     allowed = TRANSITIONS.fetch(status, [])
     raise InvalidTransition, "#{status} -> #{new_status}" unless allowed.include?(new_status)
-    update!(status: new_status)
+
+    # Compare-and-swap: only writes if status is still what we just checked,
+    # closing the race window between the legality check and the write (two
+    # concurrent transition_to! calls on the same row could otherwise both
+    # pass the check and one silently clobber the other's transition).
+    rows = self.class.where(id: id, status: status).update_all(status: new_status, updated_at: Time.current)
+    raise InvalidTransition, "#{status} -> #{new_status}" if rows.zero?
+    reload
+
+    # update_all bypasses AR callbacks (after_update_commit :broadcast_card),
+    # so re-broadcast explicitly. broadcast_card already rescues its own
+    # failures, preserving the never-raises guarantee for broadcasting.
+    broadcast_card
   end
 
   # Appends a new proposal card to the chat's message stream. Called once

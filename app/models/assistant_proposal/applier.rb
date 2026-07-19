@@ -19,19 +19,27 @@ class AssistantProposal::Applier
     # commit together. Splitting them left a window where a crash after the
     # domain writes but before the proposal update would leave financial rows
     # mutated with no journal ("applied but unjournaled" — breaks undo).
+    #
+    # Race safety: proposal.lock! takes a row-level SELECT FOR UPDATE inside
+    # the transaction, so a second apply! for the same proposal (e.g. two
+    # AssistantProposalJob runs racing on the same "applying" row) blocks
+    # until the first commits, then observes the true post-commit status
+    # instead of a stale in-memory one. The legality re-check happens right
+    # after the lock, before any domain mutation, so a loser never writes
+    # anything and never clobbers the winner's journal.
     ActiveRecord::Base.transaction do
+      proposal.lock!
+
+      unless AssistantProposal::TRANSITIONS.fetch(proposal.status, []).include?("applied")
+        raise AssistantProposal::InvalidTransition, "#{proposal.status} -> applied"
+      end
+
       journal =
         case proposal.kind
         when "bulk_recategorize" then apply_recategorize(resolver)
         when "category_merge"    then apply_category_merge(resolver)
         when "merchant_merge"    then apply_merchant_merge(resolver)
         end
-
-      # Preserve the state-machine guarantee transition_to! used to give us,
-      # now that we collapse the two writes into a single update!.
-      unless AssistantProposal::TRANSITIONS.fetch(proposal.status, []).include?("applied")
-        raise AssistantProposal::InvalidTransition, "#{proposal.status} -> applied"
-      end
 
       proposal.update!(status: "applied", changes_journal: journal, applied_at: Time.current)
     end
@@ -45,13 +53,21 @@ class AssistantProposal::Applier
     # Mirrors apply!: the restore + the final status/journal write must
     # commit together, ending in a single guarded update! rather than a
     # separate transition_to! call (see apply! for the "applied but
-    # unjournaled" rationale this avoids).
+    # unjournaled" rationale this avoids). Also mirrors apply!'s race
+    # safety: proposal.lock! + a post-lock legality re-check before any
+    # restore work happens.
     ActiveRecord::Base.transaction do
+      proposal.lock!
+
+      unless AssistantProposal::TRANSITIONS.fetch(proposal.status, []).include?("undone")
+        raise AssistantProposal::InvalidTransition, "#{proposal.status} -> undone"
+      end
+
       id_map = recreate_sources(journal)   # old_id => restored/identity record id (categories/merchants); {} for recategorize
       attr_name, applied_value_for = undo_target(journal, id_map)
 
       journal.fetch("records", {}).each do |txn_id, old_value|
-        txn = Transaction.find_by(id: txn_id)
+        txn = proposal.family.transactions.find_by(id: txn_id)
         if txn.nil?
           skipped += 1
           next
@@ -65,10 +81,6 @@ class AssistantProposal::Applier
       end
 
       summary = "#{restored} restored, #{skipped} skipped (changed after apply or missing)"
-
-      unless AssistantProposal::TRANSITIONS.fetch(proposal.status, []).include?("undone")
-        raise AssistantProposal::InvalidTransition, "#{proposal.status} -> undone"
-      end
 
       proposal.update!(status: "undone", changes_journal: journal.merge("undo_summary" => summary), undone_at: Time.current)
     end
@@ -88,7 +100,11 @@ class AssistantProposal::Applier
                family.categories.create!(name: proposal.params["new_category"].to_s.strip, color: Category::COLORS.sample)
       scope = resolver.affected_scope
       records = scope.pluck(:id, :category_id).to_h
-      scope.update_all(category_id: target.id, updated_at: Time.current)
+      # Update exactly the journaled ids -- re-running the scope here (instead
+      # of reusing the ids already captured above) would leave a window where
+      # a row inserted into the scope between the pluck and the update gets
+      # mutated but never journaled (breaks undo for that row).
+      Transaction.where(id: records.keys).update_all(category_id: target.id, updated_at: Time.current)
       lock_category_on!(records.keys)
       { "op" => "recategorize", "new_category_id" => target.id, "records" => records }
     end
@@ -115,7 +131,7 @@ class AssistantProposal::Applier
       records = {}
       snapshots = sources.map { |m| { "attrs" => m.attributes, "destroyed" => m.is_a?(FamilyMerchant) } }
       sources.each do |source|
-        Transaction.where(merchant_id: source.id).pluck(:id).each { |id| records[id] = source.id }
+        proposal.family.transactions.where(merchant_id: source.id).pluck(:id).each { |id| records[id] = source.id }
       end
       Merchant::Merger.new(family: proposal.family, target_merchant: target, source_merchants: sources).merge!
       { "op" => "merchant_merge", "target_merchant_id" => target.id,

@@ -17,6 +17,15 @@ class AssistantProposalsController < ApplicationController
   end
 
   def repreview
+    # Verify the transition is legal BEFORE touching preview -- resolving
+    # params and overwriting preview is real mutation (Resolver work + a
+    # write), and doing it before the legality check meant a wrong-state
+    # repreview (e.g. on a "proposed" proposal) still clobbered preview even
+    # though the request ultimately 422s.
+    unless AssistantProposal::TRANSITIONS.fetch(@proposal.status, []).include?("proposed")
+      return head :unprocessable_entity
+    end
+
     resolver = AssistantProposal::Resolver.new(family: Current.family, kind: @proposal.kind, params: @proposal.params)
     @proposal.update!(preview: resolver.build_preview)
     @proposal.transition_to!("proposed")

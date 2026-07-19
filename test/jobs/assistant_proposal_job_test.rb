@@ -228,6 +228,74 @@ class AssistantProposalJobTest < ActiveJob::TestCase
     assert_equal provider_merchant.id, provider_txn.reload.merchant_id
   end
 
+  test "merchant_merge scopes journaled + updated transactions to the proposal's family, never touching another family's rows on the same shared ProviderMerchant source" do
+    # ProviderMerchant sources are shared across families (e.g. two families
+    # both have transactions imported from the same Plaid merchant record).
+    # apply_merchant_merge previously journaled/undid via Transaction.where /
+    # Transaction.find_by UNSCOPED by family -- for a shared ProviderMerchant
+    # source that leaks another family's transaction ids into this family's
+    # journal, and undo could write to a foreign family's rows.
+    target = @family.merchants.create!(name: "Amazon.com")
+    provider_merchant = ProviderMerchant.create!(name: "SHARED-PROVIDER-#{SecureRandom.hex(4)}", source: "plaid")
+
+    # This family's transaction pointing at the shared source -- should be affected.
+    own_txn = @account.entries.create!(name: "own provider amzn", date: Date.current, amount: 5, currency: "USD",
+      entryable: Transaction.new(category: @cat_a, merchant: provider_merchant)).entryable
+
+    # A second, unrelated family with its own transaction pointing at the SAME
+    # shared ProviderMerchant source. This must never appear in family A's
+    # journal, never be touched by apply, and never be touched by undo.
+    other_family = families(:empty)
+    other_account = other_family.accounts.create!(name: "Other Checking", currency: "USD", balance: 1000, accountable: Depository.new)
+    foreign_txn = other_account.entries.create!(name: "foreign provider amzn", date: Date.current, amount: 5, currency: "USD",
+      entryable: Transaction.new(merchant: provider_merchant)).entryable
+
+    p = make_proposal(kind: "merchant_merge",
+      params: { "source_merchant_ids" => [ provider_merchant.id ], "target_merchant_id" => target.id })
+    AssistantProposalJob.perform_now(p.id, "apply")
+    p.reload
+
+    assert_equal "applied", p.status
+    assert_equal target.id, own_txn.reload.merchant_id, "this family's transaction should be reassigned"
+    assert_not_equal target.id, foreign_txn.reload.merchant_id, "another family's transaction must not be reassigned"
+    assert_equal provider_merchant.id, foreign_txn.reload.merchant_id, "another family's transaction should be untouched"
+
+    assert_includes p.changes_journal["records"].keys, own_txn.id
+    assert_not_includes p.changes_journal["records"].keys, foreign_txn.id, "foreign family's transaction id must not leak into this family's journal"
+
+    p.reload.transition_to!("undoing")
+    AssistantProposalJob.perform_now(p.id, "undo")
+    p.reload
+
+    assert_equal "undone", p.status
+    assert_not_equal target.id, foreign_txn.reload.merchant_id, "undo must not touch another family's transaction"
+    assert_equal provider_merchant.id, foreign_txn.reload.merchant_id
+  end
+
+  test "AssistantProposalJob apply on an already-applied proposal is a no-op: status stays applied, domain rows untouched, not marked failed" do
+    # Simulates the second of two racing AssistantProposalJob "apply" runs
+    # for the same proposal -- e.g. duplicate job enqueue/retry. The first
+    # run already committed status "applied"; the second must not re-apply
+    # domain writes, must not clobber the journal, and critically must NOT
+    # get marked "failed" (that would strand a perfectly successful apply).
+    p = make_proposal(kind: "bulk_recategorize",
+      params: { "filter" => { "merchant_names" => [ "AMZN" ] }, "new_category" => "CatB" })
+    AssistantProposalJob.perform_now(p.id, "apply")
+    p.reload
+    assert_equal "applied", p.status
+    original_journal = p.changes_journal
+    original_applied_at = p.applied_at
+
+    AssistantProposalJob.perform_now(p.id, "apply")
+    p.reload
+
+    assert_equal "applied", p.status
+    assert_equal original_journal, p.changes_journal
+    assert_equal original_applied_at, p.applied_at
+    assert_nil p.error
+    @txns.each { |t| assert_equal @cat_b.id, t.reload.category_id }
+  end
+
   test "undo is atomic: a failure after restoring records rolls back the restore too" do
     p = make_proposal(kind: "bulk_recategorize",
       params: { "filter" => { "merchant_names" => [ "AMZN" ] }, "new_category" => "CatB" })

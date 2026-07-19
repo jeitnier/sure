@@ -25,6 +25,13 @@ class AssistantProposalsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "discarded", @proposal.reload.status
   end
 
+  test "discard from failed transitions to discarded instead of 422ing" do
+    @proposal.update!(status: "failed", error: "boom")
+    post discard_assistant_proposal_path(@proposal), as: :turbo_stream
+    assert_response :success
+    assert_equal "discarded", @proposal.reload.status
+  end
+
   test "apply on already-applied is rejected" do
     @proposal.update!(status: "applied")
     post apply_assistant_proposal_path(@proposal)
@@ -45,6 +52,31 @@ class AssistantProposalsControllerTest < ActionDispatch::IntegrationTest
     sign_in other
     post apply_assistant_proposal_path(@proposal)
     assert_response :not_found
+  end
+
+  test "proposed proposal card renders a sample rows table with name and before/after change" do
+    category = categories(:one)
+    entry = create_transaction(category: category, name: "Coffee Shop")
+    transaction = entry.entryable
+    proposal = AssistantProposal.create!(
+      family: @user.family, chat: @chat, kind: "bulk_recategorize",
+      params: { "filter" => { "category_ids" => [ category.id ] }, "new_category" => categories(:income).id },
+      preview: {
+        "count" => 1,
+        "affected_ids_digest" => "x",
+        "samples" => [
+          { "id" => transaction.id, "name" => entry.name, "date" => entry.date.to_s,
+            "amount" => entry.amount.to_s, "before" => category.name, "after" => categories(:income).name }
+        ],
+        "breakdown" => {}, "notes" => []
+      },
+      status: "proposed")
+
+    get chat_url(@chat)
+
+    assert_response :success
+    assert_includes response.body, entry.name
+    assert_includes response.body, "#{category.name} → #{categories(:income).name}"
   end
 
   test "repreview refreshes a stale proposal, restores it to proposed, and renders the localized apply button" do
@@ -87,10 +119,16 @@ class AssistantProposalsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "stale", stale_proposal.reload.status
   end
 
-  test "repreview on a proposal that is not stale returns 422" do
+  test "repreview on a proposal that is not stale returns 422 and never mutates preview" do
+    original_preview = @proposal.preview
+
     post repreview_assistant_proposal_path(@proposal)
 
     assert_response :unprocessable_entity
-    assert_equal "proposed", @proposal.reload.status
+    @proposal.reload
+    assert_equal "proposed", @proposal.status
+    # Regression guard: the legality check must happen BEFORE Resolver/preview
+    # work runs, so a wrong-state repreview 422s without side effects.
+    assert_equal original_preview, @proposal.preview
   end
 end
