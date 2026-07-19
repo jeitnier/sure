@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_25_230639) do
+ActiveRecord::Schema[7.2].define(version: 2026_07_19_000001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -250,6 +250,26 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_25_230639) do
     t.datetime "updated_at", null: false
     t.index ["download_token_digest"], name: "index_archived_exports_on_download_token_digest", unique: true
     t.index ["expires_at"], name: "index_archived_exports_on_expires_at"
+  end
+
+  create_table "assistant_proposals", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "chat_id", null: false
+    t.uuid "message_id"
+    t.string "kind", null: false
+    t.jsonb "params", default: {}, null: false
+    t.jsonb "preview", default: {}, null: false
+    t.jsonb "changes_journal", default: {}, null: false
+    t.string "status", default: "proposed", null: false
+    t.datetime "applied_at"
+    t.datetime "undone_at"
+    t.text "error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["chat_id"], name: "index_assistant_proposals_on_chat_id"
+    t.index ["family_id", "status"], name: "index_assistant_proposals_on_family_id_and_status"
+    t.index ["family_id"], name: "index_assistant_proposals_on_family_id"
+    t.index ["message_id"], name: "index_assistant_proposals_on_message_id"
   end
 
   create_table "balances", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -2113,6 +2133,9 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_25_230639) do
   add_foreign_key "akahu_accounts", "akahu_items"
   add_foreign_key "akahu_items", "families"
   add_foreign_key "api_keys", "users"
+  add_foreign_key "assistant_proposals", "chats"
+  add_foreign_key "assistant_proposals", "families"
+  add_foreign_key "assistant_proposals", "messages"
   add_foreign_key "balances", "accounts", on_delete: :cascade
   add_foreign_key "binance_accounts", "binance_items"
   add_foreign_key "binance_items", "families"
