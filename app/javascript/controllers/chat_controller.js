@@ -14,15 +14,11 @@ export default class extends Controller {
   connect() {
     this.reportedUrls = new Set();
     this.inFlightUrls = new Set();
-    this.#configureAutoScroll();
     this.#updateSubmitState();
     this.#startUndeliveredWatchdog();
   }
 
   disconnect() {
-    if (this.messagesObserver) {
-      this.messagesObserver.disconnect();
-    }
     if (this.watchdogTimer) {
       clearInterval(this.watchdogTimer);
     }
@@ -69,23 +65,10 @@ export default class extends Controller {
     this.submitTarget.disabled = !this.#hasContent();
   }
 
-  #configureAutoScroll() {
-    this.messagesObserver = new MutationObserver((_mutations) => {
-      if (this.hasMessagesTarget) {
-        this.#scrollToBottom();
-      }
-    });
-
-    // Listen to entire sidebar for changes, always try to scroll to the bottom
-    this.messagesObserver.observe(this.element, {
-      childList: true,
-      subtree: true,
-    });
-  }
-
-  #scrollToBottom = () => {
-    this.messagesTarget.scrollTop = this.messagesTarget.scrollHeight;
-  };
+  // Scroll position/anchoring for the messages pane is owned by the
+  // chat-scroll Stimulus controller (attached directly to the messages
+  // target) so pinned-to-bottom vs. remembered-scroll-position behavior
+  // isn't fought over by two observers. See chat_scroll_controller.js.
 
   // Watchdog: a "Thinking…" bubble only resolves when the background worker
   // streams a response over Turbo. If the worker is down — or the job dies
