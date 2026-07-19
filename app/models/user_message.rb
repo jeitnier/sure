@@ -6,6 +6,9 @@ class UserMessage < Message
   validates :ai_model, presence: true
   validate :validate_attachments, if: -> { attachments.attached? }
 
+  # Order is intentional: the assistant must respond to this message before
+  # attachment ingestion runs -- ingested docs are indexed for FUTURE
+  # search_family_files queries, not consumed by the response to this turn.
   after_create_commit :request_response_later
   after_create_commit :ingest_attachments_later, if: -> { attachments.attached? }
 

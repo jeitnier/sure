@@ -49,6 +49,15 @@ export default class extends Controller {
   // Newlines require shift+enter, otherwise submit the form (same functionality as ChatGPT and others)
   handleInputKeyDown(e) {
     if (e.key === "Enter" && !e.shiftKey) {
+      // The mention popover owns Enter while it's open (to select the
+      // highlighted entry) -- its own keydown handler runs after this one
+      // (data-action order: chat#handleInputKeyDown then mention#onKeydown)
+      // and calls preventDefault() + selects. If we preventDefault/submit
+      // here first, the keystroke never reaches mention_controller and a
+      // keyboard-selected mention would submit a junk partial message
+      // instead of being inserted. So bail out early, untouched.
+      if (this.#mentionMenuOpen()) return;
+
       e.preventDefault();
       if (this.#hasContent() && !this.#uploadsInflight()) {
         this.formTarget.requestSubmit();
@@ -61,13 +70,22 @@ export default class extends Controller {
   }
 
   // Single source of truth for whether an attachment upload is still in
-  // flight: attachment_controller (attached to the #chat-form wrapper, an
-  // ancestor of this controller's element) sets/clears
+  // flight: attachment_controller (attached to the #chat-form wrapper, a
+  // descendant of this controller's element) sets/clears
   // `data-uploads-inflight` on that element. See the ownership-rule comment
   // atop attachment_controller.js — chat_controller owns `disabled`,
   // attachment_controller only forces it true and pokes us to recompute.
   #uploadsInflight() {
     return !!this.element.querySelector("#chat-form")?.dataset.uploadsInflight;
+  }
+
+  // Single source of truth for whether the mention popover is open:
+  // mention_controller (attached to the #chat-form wrapper, a descendant of
+  // this controller's element) sets/clears `data-mention-menu-open` on that
+  // element when it opens/closes the popover. Same ownership pattern as
+  // `#uploadsInflight()` above.
+  #mentionMenuOpen() {
+    return !!this.element.querySelector("#chat-form")?.dataset.mentionMenuOpen;
   }
 
   #updateSubmitState() {

@@ -231,6 +231,10 @@ class Assistant::Responder
       messages = []
       complete_chat_messages.each do |chat_message|
         if chat_message.tool_calls.any?
+          # content_for_openai_payload's current-message substitution never
+          # fires here in practice: the current message is always a freshly
+          # created UserMessage with no tool_calls of its own, so this branch
+          # only ever sees prior (non-current) chat_message records.
           messages << {
             role: chat_message.role,
             content: content_for_openai_payload(chat_message),

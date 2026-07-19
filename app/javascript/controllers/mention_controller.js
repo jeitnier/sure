@@ -10,6 +10,13 @@ export default class extends Controller {
   connect() {
     this.active = false;
     this.selectedIndex = 0;
+    // Defensive: never start with a stale flag left behind (e.g. a prior
+    // instance was torn down mid-popover).
+    delete this.element.dataset.mentionMenuOpen;
+  }
+
+  disconnect() {
+    delete this.element.dataset.mentionMenuOpen;
   }
 
   // action: input->mention#onInput keydown->mention#onKeydown on the textarea
@@ -80,6 +87,11 @@ export default class extends Controller {
             .join("");
     this.menuTarget.classList.remove("hidden");
     this.active = true;
+    // Single source of truth read by chat_controller#handleInputKeyDown so
+    // Enter-to-submit and Enter-to-select-mention never race each other. See
+    // the ownership-rule comment atop attachment_controller.js for the
+    // pattern this mirrors (data-uploads-inflight).
+    this.element.dataset.mentionMenuOpen = "true";
   }
 
   move(delta) {
@@ -127,6 +139,7 @@ export default class extends Controller {
   close() {
     this.active = false;
     this.menuTarget?.classList.add("hidden");
+    delete this.element.dataset.mentionMenuOpen;
   }
 
   escape(s) {
