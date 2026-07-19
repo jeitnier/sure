@@ -2,8 +2,8 @@
 <div id="<%= proposal.dom_target %>" class="my-3 rounded-lg border border-secondary bg-container p-4 shadow-border-xs">
   <div class="flex items-center justify-between mb-2">
     <h4 class="text-sm font-medium text-primary">
-      <%= { "bulk_recategorize" => "Bulk recategorize", "category_merge" => "Merge categories", "merchant_merge" => "Merge merchants" }[proposal.kind] %>
-      — <%= proposal.preview["count"] %> record<%= "s" unless proposal.preview["count"] == 1 %>
+      <%= t(".kinds.#{proposal.kind}") %>
+      — <%= t(".records", count: proposal.preview["count"]) %>
     </h4>
     <span class="text-xs text-secondary uppercase"><%= proposal.status %></span>
   </div>
@@ -23,26 +23,26 @@
   <% case proposal.status %>
   <% when "proposed" %>
     <div class="flex gap-2 mt-2">
-      <%= button_to "Apply", apply_assistant_proposal_path(proposal), class: "px-3 py-1.5 bg-inverse text-inverse rounded-lg text-sm font-medium cursor-pointer" %>
-      <%= button_to "Discard", discard_assistant_proposal_path(proposal), class: "px-3 py-1.5 text-sm text-secondary cursor-pointer" %>
+      <%= button_to t(".apply"), apply_assistant_proposal_path(proposal), class: "px-3 py-1.5 bg-inverse text-inverse rounded-lg text-sm font-medium cursor-pointer" %>
+      <%= button_to t(".discard"), discard_assistant_proposal_path(proposal), class: "px-3 py-1.5 text-sm text-secondary cursor-pointer" %>
     </div>
   <% when "applying", "undoing" %>
-    <p class="text-xs text-secondary animate-pulse">Working…</p>
+    <p class="text-xs text-secondary animate-pulse"><%= t(".working") %></p>
   <% when "applied" %>
-    <p class="text-xs text-primary">Applied <%= proposal.applied_at&.strftime("%m-%d-%Y %H:%M") %></p>
+    <p class="text-xs text-primary"><%= t(".applied_at", timestamp: proposal.applied_at&.strftime("%m-%d-%Y %H:%M")) %></p>
     <div class="flex gap-2 mt-2 items-center">
-      <%= button_to "Undo", undo_assistant_proposal_path(proposal), class: "px-3 py-1.5 text-sm text-secondary border border-secondary rounded-lg cursor-pointer" %>
-      <span class="text-xs text-subdued" title="Coming in v1.1">Make permanent →</span>
+      <%= button_to t(".undo"), undo_assistant_proposal_path(proposal), class: "px-3 py-1.5 text-sm text-secondary border border-secondary rounded-lg cursor-pointer" %>
+      <span class="text-xs text-subdued" title="Coming in v1.1"><%= t(".make_permanent") %></span>
     </div>
   <% when "stale" %>
-    <p class="text-xs text-warning">Data changed since preview.</p>
-    <%= button_to "Re-preview", repreview_assistant_proposal_path(proposal), class: "px-3 py-1.5 text-sm border border-secondary rounded-lg cursor-pointer mt-1" %>
+    <p class="text-xs text-warning"><%= t(".stale_message") %></p>
+    <%= button_to t(".repreview"), repreview_assistant_proposal_path(proposal), class: "px-3 py-1.5 text-sm border border-secondary rounded-lg cursor-pointer mt-1" %>
   <% when "failed" %>
     <p class="text-xs text-destructive"><%= proposal.error %></p>
-    <%= button_to "Discard", discard_assistant_proposal_path(proposal), class: "px-3 py-1.5 text-sm text-secondary cursor-pointer mt-1" %>
+    <%= button_to t(".discard"), discard_assistant_proposal_path(proposal), class: "px-3 py-1.5 text-sm text-secondary cursor-pointer mt-1" %>
   <% when "undone" %>
-    <p class="text-xs text-secondary"><%= proposal.changes_journal["undo_summary"] || "Undone." %></p>
+    <p class="text-xs text-secondary"><%= proposal.changes_journal["undo_summary"] || t(".undone_fallback") %></p>
   <% when "discarded" %>
-    <p class="text-xs text-subdued">Discarded.</p>
+    <p class="text-xs text-subdued"><%= t(".discarded") %></p>
   <% end %>
 </div>
