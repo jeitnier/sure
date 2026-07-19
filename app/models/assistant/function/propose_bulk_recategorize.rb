@@ -19,6 +19,8 @@ class Assistant::Function::ProposeBulkRecategorize < Assistant::Function
         new_category: target category id or exact name (a new category is created if the name doesn't exist).
       INSTRUCTIONS
     end
+
+    def chat_required? = true
   end
 
   def strict_mode? = false

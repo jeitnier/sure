@@ -7,6 +7,10 @@ class Assistant::Function
     def description
       raise NotImplementedError, "Subclasses must implement the description class method"
     end
+
+    # Whether this function is usable outside a chat context (e.g. the MCP endpoint).
+    # Propose tools stage chat cards, so they require a chat.
+    def chat_required? = false
   end
 
   def initialize(user, chat: nil)

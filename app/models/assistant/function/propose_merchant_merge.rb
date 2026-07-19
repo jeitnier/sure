@@ -14,6 +14,8 @@ class Assistant::Function::ProposeMerchantMerge < Assistant::Function
         appear in source_merchant_ids.
       INSTRUCTIONS
     end
+
+    def chat_required? = true
   end
 
   def strict_mode? = false

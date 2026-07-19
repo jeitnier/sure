@@ -70,7 +70,7 @@ class McpController < ApplicationController
     end
 
     def handle_tools_list
-      tools = Assistant.function_classes.map do |fn_class|
+      tools = mcp_function_classes.map do |fn_class|
         fn_instance = fn_class.new(mcp_user)
         {
           name: fn_instance.name,
@@ -86,7 +86,7 @@ class McpController < ApplicationController
       name = params&.dig("name")
       arguments = params&.dig("arguments") || {}
 
-      fn_class = Assistant.function_classes.find { |fc| fc.name == name }
+      fn_class = mcp_function_classes.find { |fc| fc.name == name }
 
       unless fn_class
         render_jsonrpc_error(request_id, -32602, "Unknown tool: #{name}")
@@ -156,6 +156,12 @@ class McpController < ApplicationController
 
     def mcp_user
       @mcp_user
+    end
+
+    # Functions that require a chat context (e.g. the propose_* tools, which stage a
+    # proposal card into a chat) are not usable over MCP — there is no chat here.
+    def mcp_function_classes
+      Assistant.function_classes.reject(&:chat_required?)
     end
 
     def render_mcp_unauthorized

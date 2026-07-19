@@ -15,6 +15,8 @@ class Assistant::Function::ProposeCategoryMerge < Assistant::Function
         simply deleted. A target cannot also appear in source_category_ids.
       INSTRUCTIONS
     end
+
+    def chat_required? = true
   end
 
   def strict_mode? = false
