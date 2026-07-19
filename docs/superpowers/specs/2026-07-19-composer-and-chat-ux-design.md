@@ -121,7 +121,8 @@ send "recategorize everything in @[🧺 Household Goods](category:…) to @[Home
 - `Message has_many_attached :attachments` (Active Storage; no migration beyond what
   AS already has).
 - Validations (on UserMessage create): content types `image/png image/jpeg image/webp
-  image/heic application/pdf`; ≤ **10 MB** each; ≤ **5** attachments per message.
+  application/pdf` (no HEIC — the Anthropic API does not accept it; iPhone clipboard
+  pastes arrive as PNG. A HEIC→JPEG transcode is a possible follow-up.); ≤ **10 MB** each; ≤ **5** attachments per message.
   Violations render a form error in the composer, message not created.
 
 ### UI
