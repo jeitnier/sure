@@ -43,7 +43,10 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     else requested_browser || :chrome
     end
 
-    headless = ENV["CI"].present? || requested_browser.in?([ :headless_chrome, :headless_firefox ]) || ENV["DISPLAY"].blank?
+    # Headless by DEFAULT — visible browser windows steal focus on macOS
+    # ("Chrome for Testing" cannot even be backgrounded). Opt into a headed
+    # browser explicitly with HEADLESS=0 when you want to watch a test run.
+    headless = ENV["HEADLESS"] != "0"
 
     Capybara.register_driver :selenium_local_chrome do |app|
       options = case local_browser
