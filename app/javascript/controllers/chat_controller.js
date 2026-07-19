@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus";
 
 export default class extends Controller {
-  static targets = ["messages", "form", "input", "submit", "pendingResponse"];
+  static targets = ["form", "input", "submit", "pendingResponse"];
   static values = {
     // How long a pending "Thinking…" bubble may wait before we assume the
     // background worker never delivered a response. Generous so slow models or
@@ -95,7 +95,8 @@ export default class extends Controller {
     this.pendingResponseTargets.forEach((el) => {
       const url = el.dataset.pendingResponseTimeoutUrl;
       // Skip if already reported (succeeded) or a report is in flight.
-      if (!url || this.reportedUrls.has(url) || this.inFlightUrls.has(url)) return;
+      if (!url || this.reportedUrls.has(url) || this.inFlightUrls.has(url))
+        return;
 
       const createdAt = Date.parse(el.dataset.pendingResponseCreatedAt);
       if (Number.isNaN(createdAt)) return;

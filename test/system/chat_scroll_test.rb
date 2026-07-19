@@ -53,4 +53,36 @@ class ChatScrollTest < ApplicationSystemTestCase
     top = page.evaluate_script(%q{document.querySelector('#chat-container [data-controller~="chat-scroll"]').scrollTop})
     assert_in_delta 100, top, 40, "expected restored position near 100, got #{top}"
   end
+
+  test "sending own message always re-pins to bottom even if scrolled up" do
+    with_env_overrides OPENAI_ACCESS_TOKEN: "test-token" do
+      visit root_path
+
+      within "#chat-container" do
+        assert_selector "[data-controller~='chat-scroll']"
+      end
+
+      # Scroll up (unpin) and wait for the throttled persist handler.
+      page.execute_script(<<~JS)
+        const el = document.querySelector('#chat-container [data-controller~="chat-scroll"]');
+        el.scrollTop = 100; el.dispatchEvent(new Event('scroll'));
+      JS
+      sleep 0.3
+
+      Chat.any_instance.expects(:ask_assistant_later)
+
+      within "#chat-form" do
+        find("[data-chat-target='input']").set("Can you help with my finances?")
+        find("[data-chat-target='submit']").click
+      end
+
+      assert_text "Can you help with my finances?"
+
+      distance = page.evaluate_script(<<~JS)
+        (() => { const el = document.querySelector('#chat-container [data-controller~="chat-scroll"]');
+                 return el ? el.scrollHeight - el.scrollTop - el.clientHeight : -1 })()
+      JS
+      assert_operator distance, :<=, 64, "expected pane re-pinned to bottom after sending own message, was #{distance}px away"
+    end
+  end
 end
