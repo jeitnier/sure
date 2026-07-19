@@ -129,13 +129,14 @@ class Assistant::Responder
 
     def get_llm_response(streamer:, function_results: [], previous_response_id: nil)
       response = llm.chat_response(
-        message.content,
+        prompt_with_mentions,
         model: message.ai_model,
         instructions: instructions,
         functions: function_tool_caller.function_definitions,
         function_results: function_results,
         messages: openai_messages_payload,
         conversation_history: chat_message_records,
+        current_message: message,
         streamer: streamer,
         previous_response_id: previous_response_id,
         session_id: chat_session_id,
@@ -172,6 +173,32 @@ class Assistant::Responder
       @chat ||= message.chat
     end
 
+    def prompt_with_mentions
+      @prompt_with_mentions ||= begin
+        text = message.content.to_s + Mention::ContextBuilder.new(message, message.chat.user.family).context
+        # Anthropic gets the raw attachments (native image/document blocks
+        # built by Provider::Anthropic::MessageFormatter from `current_message`
+        # for the current turn) — it doesn't need a text marker. Every other
+        # provider (OpenAI, and OpenAI-compatible self-hosted providers) can't
+        # read attachments at all, so tell the model they exist via a plain
+        # marker instead. LLM-facing text, not user-facing — i18n not required.
+        text += attachment_marker unless llm.is_a?(Provider::Anthropic)
+        text
+      end
+    end
+
+    # `message` here is always the current UserMessage — attachments live on
+    # the Message base class, but no code path attaches files to an
+    # AssistantMessage today. If that ever changes, this branch (and the
+    # Anthropic history-marker branch in MessageFormatter) will need to add
+    # markers for AssistantMessage attachments too.
+    def attachment_marker
+      return "" unless message.respond_to?(:attachments) && message.attachments.attached?
+
+      names = message.attachments.map { |att| att.filename.to_s }.join(", ")
+      "\n\n[attached: #{names} — this provider cannot read attachments]"
+    end
+
     # Memoized fetch — both `chat_message_records` and `openai_messages_payload`
     # derive their shape from this one in-memory array so a single chat turn
     # fires one history query instead of two.
@@ -204,9 +231,13 @@ class Assistant::Responder
       messages = []
       complete_chat_messages.each do |chat_message|
         if chat_message.tool_calls.any?
+          # content_for_openai_payload's current-message substitution never
+          # fires here in practice: the current message is always a freshly
+          # created UserMessage with no tool_calls of its own, so this branch
+          # only ever sees prior (non-current) chat_message records.
           messages << {
             role: chat_message.role,
-            content: chat_message.content || "",
+            content: content_for_openai_payload(chat_message),
             tool_calls: chat_message.tool_calls.map(&:to_tool_call)
           }
 
@@ -230,9 +261,20 @@ class Assistant::Responder
           end
 
         elsif !chat_message.content.blank?
-          messages << { role: chat_message.role, content: chat_message.content || "" }
+          messages << { role: chat_message.role, content: content_for_openai_payload(chat_message) }
         end
       end
       messages
+    end
+
+    # The CURRENT message's raw `content` never reaches this payload — it
+    # must carry the augmented prompt (mention context + attachment markers
+    # for non-Anthropic providers) built by `prompt_with_mentions`, or that
+    # context silently never reaches self-hosted OpenAI-compatible providers,
+    # which prefer `messages:` over `prompt` (Task 3 review carry-over).
+    def content_for_openai_payload(chat_message)
+      return prompt_with_mentions if chat_message.id == message.id
+
+      chat_message.content || ""
     end
 end

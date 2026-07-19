@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus";
 
 export default class extends Controller {
-  static targets = ["messages", "form", "input", "submit", "pendingResponse"];
+  static targets = ["form", "input", "submit", "pendingResponse"];
   static values = {
     // How long a pending "Thinking…" bubble may wait before we assume the
     // background worker never delivered a response. Generous so slow models or
@@ -14,15 +14,11 @@ export default class extends Controller {
   connect() {
     this.reportedUrls = new Set();
     this.inFlightUrls = new Set();
-    this.#configureAutoScroll();
     this.#updateSubmitState();
     this.#startUndeliveredWatchdog();
   }
 
   disconnect() {
-    if (this.messagesObserver) {
-      this.messagesObserver.disconnect();
-    }
     if (this.watchdogTimer) {
       clearInterval(this.watchdogTimer);
     }
@@ -53,8 +49,17 @@ export default class extends Controller {
   // Newlines require shift+enter, otherwise submit the form (same functionality as ChatGPT and others)
   handleInputKeyDown(e) {
     if (e.key === "Enter" && !e.shiftKey) {
+      // The mention popover owns Enter while it's open (to select the
+      // highlighted entry) -- its own keydown handler runs after this one
+      // (data-action order: chat#handleInputKeyDown then mention#onKeydown)
+      // and calls preventDefault() + selects. If we preventDefault/submit
+      // here first, the keystroke never reaches mention_controller and a
+      // keyboard-selected mention would submit a junk partial message
+      // instead of being inserted. So bail out early, untouched.
+      if (this.#mentionMenuOpen()) return;
+
       e.preventDefault();
-      if (this.#hasContent()) {
+      if (this.#hasContent() && !this.#uploadsInflight()) {
         this.formTarget.requestSubmit();
       }
     }
@@ -64,28 +69,34 @@ export default class extends Controller {
     return this.inputTarget.value.trim().length > 0;
   }
 
+  // Single source of truth for whether an attachment upload is still in
+  // flight: attachment_controller (attached to the #chat-form wrapper, a
+  // descendant of this controller's element) sets/clears
+  // `data-uploads-inflight` on that element. See the ownership-rule comment
+  // atop attachment_controller.js — chat_controller owns `disabled`,
+  // attachment_controller only forces it true and pokes us to recompute.
+  #uploadsInflight() {
+    return !!this.element.querySelector("#chat-form")?.dataset.uploadsInflight;
+  }
+
+  // Single source of truth for whether the mention popover is open:
+  // mention_controller (attached to the #chat-form wrapper, a descendant of
+  // this controller's element) sets/clears `data-mention-menu-open` on that
+  // element when it opens/closes the popover. Same ownership pattern as
+  // `#uploadsInflight()` above.
+  #mentionMenuOpen() {
+    return !!this.element.querySelector("#chat-form")?.dataset.mentionMenuOpen;
+  }
+
   #updateSubmitState() {
     if (!this.hasSubmitTarget) return;
-    this.submitTarget.disabled = !this.#hasContent();
+    this.submitTarget.disabled = !this.#hasContent() || this.#uploadsInflight();
   }
 
-  #configureAutoScroll() {
-    this.messagesObserver = new MutationObserver((_mutations) => {
-      if (this.hasMessagesTarget) {
-        this.#scrollToBottom();
-      }
-    });
-
-    // Listen to entire sidebar for changes, always try to scroll to the bottom
-    this.messagesObserver.observe(this.element, {
-      childList: true,
-      subtree: true,
-    });
-  }
-
-  #scrollToBottom = () => {
-    this.messagesTarget.scrollTop = this.messagesTarget.scrollHeight;
-  };
+  // Scroll position/anchoring for the messages pane is owned by the
+  // chat-scroll Stimulus controller (attached directly to the messages
+  // target) so pinned-to-bottom vs. remembered-scroll-position behavior
+  // isn't fought over by two observers. See chat_scroll_controller.js.
 
   // Watchdog: a "Thinking…" bubble only resolves when the background worker
   // streams a response over Turbo. If the worker is down — or the job dies
@@ -112,7 +123,8 @@ export default class extends Controller {
     this.pendingResponseTargets.forEach((el) => {
       const url = el.dataset.pendingResponseTimeoutUrl;
       // Skip if already reported (succeeded) or a report is in flight.
-      if (!url || this.reportedUrls.has(url) || this.inFlightUrls.has(url)) return;
+      if (!url || this.reportedUrls.has(url) || this.inFlightUrls.has(url))
+        return;
 
       const createdAt = Date.parse(el.dataset.pendingResponseCreatedAt);
       if (Number.isNaN(createdAt)) return;

@@ -1,6 +1,17 @@
----
 en:
   messages:
     chat_form:
       placeholder: "Ask anything ..."
       disclaimer: "AI responses are informational only. Not financial advice!"
+      mention_button_title: "Mention an account, category, merchant, or tag"
+      mention_types:
+        account: "Account"
+        category: "Category"
+        merchant: "Merchant"
+        tag: "Tag"
+        empty: "No matches"
+      attach_button_title: "Attach a file"
+      attachment_uploading_label: "Uploading…"
+      attachment_remove_label: "Remove attachment"
+      attachment_error_label: "Upload failed"
+      attachment_uploading_wait_label: "Please wait for attachments to finish uploading"

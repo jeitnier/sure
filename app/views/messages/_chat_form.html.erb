@@ -1,24 +1,48 @@
 <%# locals: (chat: nil, message_hint: nil) %>
 
-<div id="chat-form" class="space-y-2">
+<div id="chat-form" class="space-y-2 relative" data-controller="mention attachment"
+     data-mention-url-value="<%= mentions_chats_path %>"
+     data-mention-labels-value="<%= {
+       account: t(".mention_types.account"),
+       category: t(".mention_types.category"),
+       merchant: t(".mention_types.merchant"),
+       tag: t(".mention_types.tag"),
+       empty: t(".mention_types.empty")
+     }.to_json %>"
+     data-attachment-url-value="<%= rails_direct_uploads_url %>"
+     data-attachment-uploading-label="<%= t(".attachment_uploading_label") %>"
+     data-attachment-remove-label="<%= t(".attachment_remove_label") %>"
+     data-attachment-error-label="<%= t(".attachment_error_label") %>"
+     data-attachment-uploading-wait-label="<%= t(".attachment_uploading_wait_label") %>"
+     data-action="dragover->attachment#dragover drop->attachment#drop paste->attachment#paste">
   <% model = chat && chat.persisted? ? [chat, Message.new] : Chat.new %>
+
+  <%= render "messages/mention_menu" %>
 
   <%= form_with model: model,
                 class: "flex lg:flex-col gap-2 bg-container px-2 py-1.5 rounded-full lg:rounded-lg shadow-border-xs",
-                data: { chat_target: "form" } do |f| %>
+                data: { chat_target: "form", action: "turbo:submit-end->attachment#clear" } do |f| %>
 
     <%# In the future, this will be a dropdown with different AI models %>
     <%= f.hidden_field :ai_model, value: default_ai_model %>
 
+    <div data-attachment-target="pending" class="flex flex-wrap gap-2 px-1"></div>
+
     <%= f.text_area :content, placeholder: t(".placeholder"), value: message_hint,
                   class: "w-full border-0 focus:ring-0 text-sm resize-none px-1 bg-transparent",
-                  data: { chat_target: "input", action: "input->chat#autoResize keydown->chat#handleInputKeyDown" },
+                  data: { chat_target: "input", mention_target: "input", action: "input->chat#autoResize keydown->chat#handleInputKeyDown input->mention#onInput keydown->mention#onKeydown" },
                   rows: 1 %>
+
+    <input type="file" multiple accept="image/png,image/jpeg,image/webp,application/pdf" class="hidden"
+           data-attachment-target="fileInput" data-action="change->attachment#filesChosen">
 
     <div class="flex items-center justify-between gap-1">
       <div class="items-center gap-1 hidden lg:flex">
+        <%= icon("at-sign", as_button: true, data: { action: "click->mention#trigger" }, title: t(".mention_button_title")) %>
+        <%= icon("plus", as_button: true, data: { action: "click->attachment#pick" }, title: t(".attach_button_title")) %>
+
         <%# These are disabled for now, but in the future, will all open specific menus with their own context and search %>
-        <% ["plus", "command", "at-sign", "mouse-pointer-click"].each do |icon| %>
+        <% ["command", "mouse-pointer-click"].each do |icon| %>
           <%= icon(icon, as_button: true, disabled: true, class: "cursor-not-allowed", title: "Coming soon") %>
         <% end %>
       </div>

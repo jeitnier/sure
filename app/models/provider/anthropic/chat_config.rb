@@ -5,6 +5,7 @@ class Provider::Anthropic::ChatConfig
     functions: [],
     function_results: [],
     conversation_history: [],
+    current_message: nil,
     default_max_tokens: 4096
   )
     @prompt = prompt
@@ -12,6 +13,7 @@ class Provider::Anthropic::ChatConfig
     @functions = functions
     @function_results = function_results
     @conversation_history = conversation_history
+    @current_message = current_message
     @default_max_tokens = default_max_tokens
   end
 
@@ -35,6 +37,7 @@ class Provider::Anthropic::ChatConfig
     def build_messages
       Provider::Anthropic::MessageFormatter.new(
         prompt: @prompt,
+        current_message: @current_message,
         conversation_history: @conversation_history,
         function_results: @function_results
       ).build

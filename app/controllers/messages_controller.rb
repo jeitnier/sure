@@ -7,7 +7,8 @@ class MessagesController < ApplicationController
     @message = UserMessage.new(
       chat: @chat,
       content: message_params[:content],
-      ai_model: message_params[:ai_model].presence || Chat.default_model
+      ai_model: message_params[:ai_model].presence || Chat.default_model,
+      attachments: message_params[:attachments]&.compact_blank
     )
 
     if @message.save
@@ -34,6 +35,6 @@ class MessagesController < ApplicationController
     end
 
     def message_params
-      params.require(:message).permit(:content, :ai_model)
+      params.require(:message).permit(:content, :ai_model, attachments: [])
     end
 end

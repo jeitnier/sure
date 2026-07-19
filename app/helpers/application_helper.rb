@@ -160,13 +160,17 @@ module ApplicationHelper
     Chat.default_model
   end
 
-  # Renders Markdown text using Redcarpet
-  def markdown(text)
+  # Renders Markdown text using Redcarpet.
+  # escape_html: true neutralizes raw HTML embedded in the source (untrusted
+  # user input) while still allowing markdown syntax to render normally.
+  # Defaults to false to preserve existing assistant-message rendering.
+  def markdown(text, escape_html: false)
     return "" if text.blank?
 
     renderer = Redcarpet::Render::HTML.new(
       hard_wrap: true,
-      link_attributes: { target: "_blank", rel: "noopener noreferrer" }
+      link_attributes: { target: "_blank", rel: "noopener noreferrer" },
+      escape_html: escape_html
     )
 
     markdown = Redcarpet::Markdown.new(
