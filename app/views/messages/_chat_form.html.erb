@@ -1,6 +1,14 @@
 <%# locals: (chat: nil, message_hint: nil) %>
 
-<div id="chat-form" class="space-y-2 relative" data-controller="mention" data-mention-url-value="<%= mentions_chats_path %>">
+<div id="chat-form" class="space-y-2 relative" data-controller="mention"
+     data-mention-url-value="<%= mentions_chats_path %>"
+     data-mention-labels-value="<%= {
+       account: t(".mention_types.account"),
+       category: t(".mention_types.category"),
+       merchant: t(".mention_types.merchant"),
+       tag: t(".mention_types.tag"),
+       empty: t(".mention_types.empty")
+     }.to_json %>">
   <% model = chat && chat.persisted? ? [chat, Message.new] : Chat.new %>
 
   <%= render "messages/mention_menu" %>

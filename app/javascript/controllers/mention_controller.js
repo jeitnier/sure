@@ -5,7 +5,7 @@ import { Controller } from "@hotwired/stimulus";
 // Targets: input (the textarea), menu (popover), list (ul inside menu)
 export default class extends Controller {
   static targets = ["input", "menu", "list"];
-  static values = { url: String };
+  static values = { url: String, labels: Object };
 
   connect() {
     this.active = false;
@@ -65,22 +65,25 @@ export default class extends Controller {
     ]) {
       for (const item of items || []) entries.push({ type, ...item });
     }
-    if (entries.length === 0) return this.close();
     this.entries = entries;
     this.selectedIndex = 0;
-    this.listTarget.innerHTML = entries
-      .map(
-        (e, i) =>
-          `<li class="px-3 py-1.5 text-sm cursor-pointer rounded-md ${i === 0 ? "bg-surface-inset" : ""}" data-index="${i}" data-action="click->mention#choose">
-         <span class="text-secondary text-xs uppercase mr-2">${e.type}</span>${this.escape(e.label)}
+    this.listTarget.innerHTML =
+      entries.length === 0
+        ? `<li class="px-3 py-1.5 text-sm text-secondary">${this.escape(this.labelsValue.empty)}</li>`
+        : entries
+            .map(
+              (e, i) =>
+                `<li class="px-3 py-1.5 text-sm cursor-pointer rounded-md ${i === 0 ? "bg-surface-inset" : ""}" data-index="${i}" data-action="click->mention#choose">
+         <span class="text-secondary text-xs uppercase mr-2">${this.escape(this.labelsValue[e.type])}</span>${this.escape(e.label)}
        </li>`,
-      )
-      .join("");
+            )
+            .join("");
     this.menuTarget.classList.remove("hidden");
     this.active = true;
   }
 
   move(delta) {
+    if (!this.entries || this.entries.length === 0) return;
     this.selectedIndex =
       (this.selectedIndex + delta + this.entries.length) % this.entries.length;
     this.listTarget
@@ -94,6 +97,7 @@ export default class extends Controller {
     this.insert(this.entries[Number(event.currentTarget.dataset.index)]);
   }
   chooseSelected() {
+    if (!this.entries || this.entries.length === 0) return;
     this.insert(this.entries[this.selectedIndex]);
   }
 

@@ -39,4 +39,18 @@ class ChatMentionsTest < ApplicationSystemTestCase
       end
     end
   end
+
+  test "typing a query with no matches shows the localized empty state" do
+    with_env_overrides OPENAI_ACCESS_TOKEN: "test-token" do
+      @user.update!(ai_enabled: true)
+      visit root_path
+
+      within "#chat-container" do
+        find("[data-chat-target='input']").click
+        find("[data-chat-target='input']").send_keys("@zzzz")
+        assert_selector "[data-mention-target='menu']", visible: true
+        assert_text I18n.t("messages.chat_form.mention_types.empty")
+      end
+    end
+  end
 end
