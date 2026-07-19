@@ -1,0 +1,26 @@
+---
+en:
+  assistant_proposals:
+    card:
+      kinds:
+        bulk_recategorize: "Bulk recategorize"
+        category_merge: "Merge categories"
+        merchant_merge: "Merge merchants"
+      records:
+        one: "1 record"
+        other: "%{count} records"
+      samples:
+        name: "Name"
+        date: "Date"
+        amount: "Amount"
+        change: "Change"
+      apply: "Apply"
+      discard: "Discard"
+      undo: "Undo"
+      repreview: "Re-preview"
+      working: "Working…"
+      applied_at: "Applied %{timestamp}"
+      make_permanent: "Make permanent →"
+      stale_message: "Data changed since preview."
+      undone_fallback: "Undone."
+      discarded: "Discarded."

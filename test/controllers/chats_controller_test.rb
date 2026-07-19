@@ -25,6 +25,36 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "shows persisted proposal cards on reload, surviving after the broadcast-only append is gone" do
+    # Proposal cards are otherwise only ever pushed via Turbo Stream broadcast
+    # (append on create, replace on status change) -- a plain page load/reload
+    # never replayed them, so an applied proposal's only Undo affordance was
+    # permanently lost the moment the page refreshed.
+    chat = chats(:one)
+
+    proposed = AssistantProposal.create!(
+      family: @family, chat: chat, kind: "bulk_recategorize",
+      params: { "filter" => { "merchant_names" => [ "X" ] }, "new_category" => "Y" },
+      preview: { "count" => 1, "affected_ids_digest" => "d1" }, status: "proposed")
+
+    get chat_url(chat)
+
+    assert_response :success
+    assert_includes response.body, proposed.dom_target
+    assert_includes response.body, I18n.t("assistant_proposals.card.apply")
+
+    applied = AssistantProposal.create!(
+      family: @family, chat: chat, kind: "bulk_recategorize",
+      params: { "filter" => { "merchant_names" => [ "X" ] }, "new_category" => "Y" },
+      preview: { "count" => 1, "affected_ids_digest" => "d2" }, status: "applied", applied_at: Time.current)
+
+    get chat_url(chat)
+
+    assert_response :success
+    assert_includes response.body, applied.dom_target
+    assert_includes response.body, I18n.t("assistant_proposals.card.undo")
+  end
+
   test "destroys chat" do
     assert_difference("Chat.count", -1) do
       delete chat_url(chats(:one))

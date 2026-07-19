@@ -220,7 +220,7 @@ class McpControllerTest < ActionDispatch::IntegrationTest
 
   # -- tools/list --
 
-  test "tools/list returns all assistant function tools" do
+  test "tools/list returns all assistant function tools that don't require a chat" do
     with_mcp_env do
       post "/mcp", params: jsonrpc_request("tools/list").to_json,
            headers: mcp_headers(@token)
@@ -229,8 +229,10 @@ class McpControllerTest < ActionDispatch::IntegrationTest
       body = JSON.parse(response.body)
       tools = body["result"]["tools"]
 
+      expected_count = Assistant.function_classes.reject(&:chat_required?).size
+
       assert_kind_of Array, tools
-      assert_equal Assistant.function_classes.size, tools.size
+      assert_equal expected_count, tools.size
 
       tool_names = tools.map { |t| t["name"] }
       assert_includes tool_names, "get_transactions"
@@ -249,6 +251,22 @@ class McpControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "tools/list excludes chat-required propose tools but includes get_proposals" do
+    with_mcp_env do
+      post "/mcp", params: jsonrpc_request("tools/list").to_json,
+           headers: mcp_headers(@token)
+
+      assert_response :ok
+      body = JSON.parse(response.body)
+      tool_names = body["result"]["tools"].map { |t| t["name"] }
+
+      refute_includes tool_names, "propose_bulk_recategorize"
+      refute_includes tool_names, "propose_category_merge"
+      refute_includes tool_names, "propose_merchant_merge"
+      assert_includes tool_names, "get_proposals"
+    end
+  end
+
   # -- tools/call --
 
   test "tools/call returns error for unknown tool with request id preserved" do
@@ -261,6 +279,21 @@ class McpControllerTest < ActionDispatch::IntegrationTest
       assert_equal(-32602, body["error"]["code"])
       assert_includes body["error"]["message"], "nonexistent_tool"
       assert_equal 99, body["id"], "Error response must echo the request id"
+    end
+  end
+
+  test "tools/call rejects chat-required propose tools with unknown-tool error" do
+    with_mcp_env do
+      post "/mcp", params: jsonrpc_request("tools/call", {
+        name: "propose_bulk_recategorize",
+        arguments: {}
+      }, id: 100).to_json, headers: mcp_headers(@token)
+
+      assert_response :ok
+      body = JSON.parse(response.body)
+      assert_equal(-32602, body["error"]["code"])
+      assert_includes body["error"]["message"], "propose_bulk_recategorize"
+      assert_equal 100, body["id"], "Error response must echo the request id"
     end
   end
 

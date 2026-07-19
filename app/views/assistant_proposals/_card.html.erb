@@ -1,0 +1,73 @@
+<%# app/views/assistant_proposals/_card.html.erb %>
+<div id="<%= proposal.dom_target %>" class="my-3 rounded-lg border border-secondary bg-container p-4 shadow-border-xs">
+  <div class="flex items-center justify-between mb-2">
+    <h4 class="text-sm font-medium text-primary">
+      <%= t(".kinds.#{proposal.kind}") %>
+      — <%= t(".records", count: proposal.preview["count"]) %>
+    </h4>
+    <span class="text-xs text-secondary uppercase"><%= proposal.status %></span>
+  </div>
+
+  <% if proposal.preview["breakdown"].present? %>
+    <div class="text-xs text-secondary mb-2">
+      <% proposal.preview["breakdown"].each do |label, count| %>
+        <div><%= label %> → <%= count %></div>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% Array(proposal.preview["notes"]).each do |note| %>
+    <p class="text-xs text-warning mb-1"><%= note %></p>
+  <% end %>
+
+  <% if %w[proposed stale].include?(proposal.status) && Array(proposal.preview["samples"]).any? %>
+    <div class="overflow-x-auto mb-2">
+      <table class="w-full text-xs text-left">
+        <thead>
+          <tr class="text-secondary">
+            <th class="pr-2 py-1 font-medium"><%= t(".samples.name") %></th>
+            <th class="pr-2 py-1 font-medium"><%= t(".samples.date") %></th>
+            <th class="pr-2 py-1 font-medium"><%= t(".samples.amount") %></th>
+            <th class="pr-2 py-1 font-medium"><%= t(".samples.change") %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% Array(proposal.preview["samples"]).each do |sample| %>
+            <tr class="border-t border-secondary">
+              <td class="pr-2 py-1 text-primary"><%= sample["name"] %></td>
+              <td class="pr-2 py-1 text-secondary"><%= sample["date"] %></td>
+              <td class="pr-2 py-1 text-secondary"><%= sample["amount"] %></td>
+              <td class="pr-2 py-1 text-secondary"><%= sample["before"] %> → <%= sample["after"] %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+
+  <% case proposal.status %>
+  <% when "proposed" %>
+    <div class="flex gap-2 mt-2">
+      <%= button_to t(".apply"), apply_assistant_proposal_path(proposal), class: "px-3 py-1.5 bg-inverse text-inverse rounded-lg text-sm font-medium cursor-pointer" %>
+      <%= button_to t(".discard"), discard_assistant_proposal_path(proposal), class: "px-3 py-1.5 text-sm text-secondary cursor-pointer" %>
+    </div>
+  <% when "applying", "undoing" %>
+    <p class="text-xs text-secondary animate-pulse"><%= t(".working") %></p>
+  <% when "applied" %>
+    <p class="text-xs text-primary"><%= t(".applied_at", timestamp: proposal.applied_at&.strftime("%m-%d-%Y %H:%M")) %></p>
+    <div class="flex gap-2 mt-2 items-center">
+      <%= button_to t(".undo"), undo_assistant_proposal_path(proposal), class: "px-3 py-1.5 text-sm text-secondary border border-secondary rounded-lg cursor-pointer" %>
+      <span class="text-xs text-subdued" title="Coming in v1.1"><%= t(".make_permanent") %></span>
+    </div>
+  <% when "stale" %>
+    <p class="text-xs text-warning"><%= t(".stale_message") %></p>
+    <%= button_to t(".repreview"), repreview_assistant_proposal_path(proposal), class: "px-3 py-1.5 text-sm border border-secondary rounded-lg cursor-pointer mt-1" %>
+  <% when "failed" %>
+    <p class="text-xs text-destructive"><%= proposal.error %></p>
+    <%= button_to t(".discard"), discard_assistant_proposal_path(proposal), class: "px-3 py-1.5 text-sm text-secondary cursor-pointer mt-1" %>
+  <% when "undone" %>
+    <p class="text-xs text-secondary"><%= proposal.changes_journal["undo_summary"] || t(".undone_fallback") %></p>
+  <% when "discarded" %>
+    <p class="text-xs text-subdued"><%= t(".discarded") %></p>
+  <% end %>
+</div>

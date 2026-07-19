@@ -36,7 +36,11 @@ module Assistant
         Function::UpdateTag,
         Function::GetCategories,
         Function::CreateCategory,
-        Function::UpdateCategory
+        Function::UpdateCategory,
+        Function::ProposeBulkRecategorize,
+        Function::ProposeCategoryMerge,
+        Function::ProposeMerchantMerge,
+        Function::GetProposals
       ]
     end
 

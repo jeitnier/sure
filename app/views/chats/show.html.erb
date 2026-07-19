@@ -31,6 +31,15 @@
         <% if @chat.error.present? && @chat.needs_assistant_response? %>
           <%= render "chats/error", chat: @chat %>
         <% end %>
+
+        <%# Proposal cards are otherwise broadcast-only (Turbo Stream append/replace),
+            so a page reload would permanently lose them -- including an applied
+            proposal's only Undo affordance. Render persisted cards here, inside the
+            same scrollable messages container the broadcasts target, so a reload and
+            a live broadcast compose instead of conflicting. %>
+        <% @chat.assistant_proposals.order(:created_at).each do |proposal| %>
+          <%= render "assistant_proposals/card", proposal: proposal %>
+        <% end %>
       </div>
 
       <%# DESKTOP - Chat form %>
