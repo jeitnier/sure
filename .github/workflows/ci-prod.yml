@@ -1,0 +1,15 @@
+# Fork (jeitnier/sure): run the full upstream CI suite on every push to the
+# deploy branch. CT 622's sure-autodeploy timer polls prod and only deploys
+# commits whose check runs here are green — this workflow IS the deploy gate.
+name: CI (prod)
+
+on:
+  push:
+    branches: [prod]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
