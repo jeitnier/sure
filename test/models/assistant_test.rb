@@ -260,9 +260,17 @@ class AssistantTest < ActiveSupport::TestCase
     )
 
     # Single dynamic expectation (see the multi-iteration test above for
-    # rationale).
+    # rationale). Uses `stubs` + a manual `invocation` counter (asserted
+    # below) rather than `expects(...).times(2)`: the second round's
+    # streamer.call happens *inside* the first call's `with` block (the
+    # follow-up round-trips synchronously before the outer call returns),
+    # and here that nested call raises ToolCallLimitError, which unwinds
+    # through the outer `with` block via exception. Mocha's own invocation
+    # counter for `.times(2)` gets confused by an exception escaping a
+    # `with` block mid-match (it never records the outer call as matched),
+    # so we track and assert the real call count ourselves instead.
     invocation = 0
-    @provider.expects(:chat_response).times(2).with do |_prompt, **options|
+    @provider.stubs(:chat_response).with do |_prompt, **options|
       invocation += 1
       case invocation
       when 1 then options[:streamer].call(call1_chunk)
@@ -301,6 +309,7 @@ class AssistantTest < ActiveSupport::TestCase
     # leak into future history builders either way).
     assert_instance_of Assistant::Responder::ToolCallLimitError, captured_error
     assert_match(/tool-call limit/i, captured_error.message)
+    assert_equal 2, invocation, "expected provider.chat_response to be called for both the initial round and the capped follow-up round"
   end
 
   test "ASSISTANT_MAX_TOOL_CALL_ITERATIONS falls back to default when zero, negative, or unparseable" do
