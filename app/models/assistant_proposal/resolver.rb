@@ -97,6 +97,8 @@ class AssistantProposal::Resolver
       Merchant.where(id: family.merchants.select(:id)).or(Merchant.where(id: family.assigned_merchants.select(:id)))
     end
 
+    UUID_FORMAT = /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/
+
     def recategorize_scope
       filter = params.fetch("filter", {})
       raise InvalidParams, "filter must not be empty" if filter.blank? || filter.values.all?(&:blank?)
@@ -126,6 +128,20 @@ class AssistantProposal::Resolver
       # entries.account_id needs no additional join — adding one here would
       # create a duplicate/aliased "entries" join.
       scope = scope.where(entries: { account_id: filter["account_ids"] }) if filter["account_ids"].present?
+
+      if filter["transaction_ids"].present?
+        ids = Array(filter["transaction_ids"]).map(&:to_s).uniq
+        # Strict validation: every id must be a real transaction in this family.
+        # Malformed ids are rejected up front — Postgres would raise on a bad
+        # uuid cast — and unknown/foreign ids raise rather than silently
+        # shrinking the proposal, so the LLM can't misreport what it staged.
+        well_formed, malformed = ids.partition { |id| id.match?(UUID_FORMAT) }
+        found = family.transactions.where(id: well_formed).pluck(:id).map(&:to_s)
+        unknown = malformed + (well_formed - found)
+        raise InvalidParams, "unknown transaction id(s): #{unknown.join(', ')}" if unknown.any?
+        scope = scope.where(id: ids)
+      end
+
       scope
     end
 
