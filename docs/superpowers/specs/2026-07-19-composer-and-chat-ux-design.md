@@ -71,8 +71,10 @@ message while pinned → view follows it.
 - A popover anchored above/near the caret lists matching entities grouped by type —
   **Accounts, Categories, Merchants, Tags** — max 5 per group, keyboard navigable
   (↑/↓/Enter/Esc), filtered live as the user types after `@`.
-- Selection inserts a token; the token renders as an inline chip in the composer
-  (background pill, entity icon) and in the rendered user message.
+- Selection inserts the token as plain text in the composer textarea (true inline
+  chips inside a textarea require a contenteditable rebuild — not v1). In RENDERED
+  user messages, tokens display as styled chips (background pill) via a render-time
+  helper replacing the token pattern.
 
 ### Token format (canonical, stored in `Message#content` as plain text)
 
