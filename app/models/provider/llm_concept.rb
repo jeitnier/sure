@@ -42,6 +42,7 @@ module Provider::LlmConcept
     function_results: [],
     messages: nil,
     conversation_history: [],
+    current_message: nil,
     streamer: nil,
     previous_response_id: nil,
     session_id: nil,

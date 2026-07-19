@@ -209,6 +209,7 @@ class Provider::Anthropic < Provider
     function_results: [],
     messages: nil,
     conversation_history: [],
+    current_message: nil,
     streamer: nil,
     previous_response_id: nil,
     session_id: nil,
@@ -222,6 +223,7 @@ class Provider::Anthropic < Provider
         functions: functions,
         function_results: function_results,
         conversation_history: conversation_history,
+        current_message: current_message,
         default_max_tokens: default_max_tokens
       )
 

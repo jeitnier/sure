@@ -265,12 +265,18 @@ class Provider::Openai < Provider
     function_results: [],
     messages: nil,
     conversation_history: [],
+    current_message: nil,
     streamer: nil,
     previous_response_id: nil,
     session_id: nil,
     user_identifier: nil,
     family: nil
   )
+    # current_message is Anthropic-only (native attachment blocks for the
+    # current turn); the OpenAI paths get attachment context via the
+    # `[attached: ...]` markers the responder appends to `prompt` /
+    # `messages` instead, so it's accepted here only to keep the shared
+    # `llm.chat_response(...)` call site in Assistant::Responder uniform.
     if supports_responses_endpoint?
       # Native path uses the Responses API which chains history via
       # `previous_response_id`; it does NOT need (and must not receive)
