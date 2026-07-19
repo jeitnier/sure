@@ -125,4 +125,53 @@ class AssistantProposal::ResolverTest < ActiveSupport::TestCase
   ensure
     ENV.delete("ASSISTANT_PROPOSAL_MAX_RECORDS")
   end
+
+  test "bulk_recategorize transaction_ids filter scopes to exactly those transactions" do
+    targets = @family.transactions.limit(2).to_a
+    r = AssistantProposal::Resolver.new(family: @family, kind: "bulk_recategorize",
+      params: { "filter" => { "transaction_ids" => targets.map(&:id) }, "new_category" => "CatB" })
+    assert_equal targets.map(&:id).sort, r.affected_ids.sort
+  end
+
+  test "bulk_recategorize transaction_ids AND-combines with other filter keys" do
+    target = @family.transactions.where(merchant_id: @m1.id).first
+    other_merchant_txn = create_transaction(
+      account: @account, name: "Target run", date: Date.current,
+      amount: 20, currency: "USD", category: @cat_a,
+      merchant: @family.merchants.create!(name: "Target")
+    ).entryable
+    r = AssistantProposal::Resolver.new(family: @family, kind: "bulk_recategorize",
+      params: { "filter" => { "transaction_ids" => [ target.id, other_merchant_txn.id ],
+                              "merchant_names" => [ "AMZN Mktp" ] },
+                "new_category" => "CatB" })
+    assert_equal [ target.id ], r.affected_ids
+  end
+
+  test "bulk_recategorize unknown transaction id raises InvalidParams" do
+    err = assert_raises(AssistantProposal::Resolver::InvalidParams) do
+      AssistantProposal::Resolver.new(family: @family, kind: "bulk_recategorize",
+        params: { "filter" => { "transaction_ids" => [ SecureRandom.uuid ] }, "new_category" => "CatB" }).affected_scope
+    end
+    assert_match(/unknown transaction id/i, err.message)
+  end
+
+  test "bulk_recategorize malformed transaction id raises InvalidParams not StatementInvalid" do
+    assert_raises(AssistantProposal::Resolver::InvalidParams) do
+      AssistantProposal::Resolver.new(family: @family, kind: "bulk_recategorize",
+        params: { "filter" => { "transaction_ids" => [ "not-a-uuid" ] }, "new_category" => "CatB" }).affected_scope
+    end
+  end
+
+  test "bulk_recategorize transaction id from another family raises InvalidParams" do
+    other_family = Family.create!(name: "Other", currency: "USD", locale: "en", country: "US", timezone: "UTC")
+    other_account = other_family.accounts.create!(name: "Foreign", balance: 0, currency: "USD", accountable: Depository.new)
+    foreign_txn = create_transaction(
+      account: other_account, name: "foreign", date: Date.current,
+      amount: 9, currency: "USD"
+    ).entryable
+    assert_raises(AssistantProposal::Resolver::InvalidParams) do
+      AssistantProposal::Resolver.new(family: @family, kind: "bulk_recategorize",
+        params: { "filter" => { "transaction_ids" => [ foreign_txn.id ] }, "new_category" => "CatB" }).affected_scope
+    end
+  end
 end

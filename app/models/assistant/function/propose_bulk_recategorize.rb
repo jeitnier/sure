@@ -15,6 +15,9 @@ class Assistant::Function::ProposeBulkRecategorize < Assistant::Function
         - category_ids: current category ids; include the string "uncategorized" for transactions with no category
         - account_ids: limit to specific accounts
         - date_range: { start: "YYYY-MM-DD", end: "YYYY-MM-DD" }
+        - transaction_ids: exact transaction ids from get_transactions results. Use this
+          when the user targets specific transactions (rows from an attached file, a
+          hand-picked subset, or a single transaction) instead of a broad filter.
 
         new_category: target category id or exact name (a new category is created if the name doesn't exist).
       INSTRUCTIONS
@@ -36,7 +39,8 @@ class Assistant::Function::ProposeBulkRecategorize < Assistant::Function
             description_contains: { type: "string" },
             category_ids: { type: "array", items: { type: "string" } },
             account_ids: { type: "array", items: { type: "string" } },
-            date_range: { type: "object", properties: { start: { type: "string" }, end: { type: "string" } } }
+            date_range: { type: "object", properties: { start: { type: "string" }, end: { type: "string" } } },
+            transaction_ids: { type: "array", items: { type: "string" }, description: "Exact transaction ids (from get_transactions)" }
           }
         },
         new_category: { type: "string", description: "Target category id or exact name" }

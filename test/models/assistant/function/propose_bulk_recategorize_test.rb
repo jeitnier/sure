@@ -35,4 +35,17 @@ class Assistant::Function::ProposeBulkRecategorizeTest < ActiveSupport::TestCase
     result = @fn.call({ "filter" => {}, "new_category" => "Shopping" })
     assert_not result[:success]
   end
+
+  test "creates a proposal from explicit transaction_ids" do
+    target_id = @family.transactions.first.id
+    result = @fn.call({ "filter" => { "transaction_ids" => [ target_id ] }, "new_category" => "Shopping" })
+    assert result[:success]
+    proposal = AssistantProposal.find(result[:proposal_id])
+    assert_equal 1, proposal.preview["count"]
+    assert_equal [ target_id ], proposal.preview["samples"].map { |s| s["id"] }
+  end
+
+  test "transaction_ids is declared in the params schema" do
+    assert @fn.params_schema.dig(:properties, :filter, :properties, :transaction_ids).present?
+  end
 end

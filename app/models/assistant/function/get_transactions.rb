@@ -155,6 +155,7 @@ class Assistant::Function::GetTransactions < Assistant::Function
     normalized_transactions = paginated_transactions.map do |txn|
       entry = txn.entry
       {
+        id: txn.id,
         name: entry.name,
         date: entry.date,
         amount: entry.amount.abs,
