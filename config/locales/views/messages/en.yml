@@ -10,3 +10,7 @@ en:
         merchant: "Merchant"
         tag: "Tag"
         empty: "No matches"
+      attach_button_title: "Attach a file"
+      attachment_uploading_label: "Uploading…"
+      attachment_remove_label: "Remove attachment"
+      attachment_error_label: "Upload failed"
