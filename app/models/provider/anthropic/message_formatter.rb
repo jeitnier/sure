@@ -84,11 +84,24 @@ class Provider::Anthropic::MessageFormatter
       blocks = [ text_block ]
       running_bytes = 0
       overflow_filenames = []
+      # Latches once true: after the first attachment overflows the cap,
+      # every later attachment in the loop degrades to a marker too, even if
+      # it would individually fit. Total encoded size only grows as blocks
+      # are added, so admitting a later small file after an earlier skip
+      # would silently exceed the cap the first overflow was meant to
+      # enforce.
+      overflowed = false
 
       @current_message.attachments.each do |attachment|
+        if overflowed
+          overflow_filenames << attachment.filename.to_s
+          next
+        end
+
         encoded = Base64.strict_encode64(attachment.download)
 
         if running_bytes + encoded.bytesize > @max_attachment_payload
+          overflowed = true
           overflow_filenames << attachment.filename.to_s
           next
         end

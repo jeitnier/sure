@@ -187,6 +187,11 @@ class Assistant::Responder
       end
     end
 
+    # `message` here is always the current UserMessage — attachments live on
+    # the Message base class, but no code path attaches files to an
+    # AssistantMessage today. If that ever changes, this branch (and the
+    # Anthropic history-marker branch in MessageFormatter) will need to add
+    # markers for AssistantMessage attachments too.
     def attachment_marker
       return "" unless message.respond_to?(:attachments) && message.attachments.attached?
 
