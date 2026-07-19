@@ -202,6 +202,15 @@ Rails.application.routes.draw do
     end
   end
 
+  resources :assistant_proposals, only: [] do
+    member do
+      post :apply
+      post :discard
+      post :undo
+      post :repreview
+    end
+  end
+
   resources :family_exports, only: %i[new create index destroy] do
     member do
       get :download

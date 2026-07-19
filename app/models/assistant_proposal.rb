@@ -18,6 +18,9 @@ class AssistantProposal < ApplicationRecord
   validates :kind, inclusion: { in: KINDS }
   validates :status, inclusion: { in: STATUSES }
 
+  after_create_commit :broadcast_card_append
+  after_update_commit :broadcast_card
+
   def self.max_records
     ENV.fetch("ASSISTANT_PROPOSAL_MAX_RECORDS", 2000).to_i
   end
