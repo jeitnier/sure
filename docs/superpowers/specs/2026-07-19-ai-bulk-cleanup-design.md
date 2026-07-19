@@ -37,7 +37,7 @@ Assistant (propose-only tools)
                                    └─ Apply/Undo click → Assistant::ProposalsController
                                                             └─ AssistantProposalJob
                                                                  ├─ drift check
-                                                                 ├─ snapshot before-values → changes jsonb
+                                                                 ├─ snapshot before-values → changes_journal jsonb
                                                                  └─ existing domain ops in one DB txn:
                                                                       Transaction.update_all + lock_attr!
                                                                       Category#replace_and_destroy!
@@ -52,7 +52,7 @@ Assistant (propose-only tools)
 - `kind` — enum string: `bulk_recategorize` | `category_merge` | `merchant_merge`
 - `params` jsonb — proposal inputs (see per-kind params below)
 - `preview` jsonb — computed at proposal time: `{count, affected_ids_digest, samples: [≤10 rows], breakdown: {before→after counts}}`
-- `changes` jsonb — filled at apply: per-record before-values (undo journal); for merges also full attribute snapshots of destroyed rows
+- `changes_journal` jsonb — filled at apply: per-record before-values (undo journal); for merges also full attribute snapshots of destroyed rows. (Named `changes_journal`, not `changes` — the latter collides with ActiveRecord dirty-tracking.)
 - `status` — `proposed | applying | applied | undoing | undone | discarded | stale | failed`
 - `applied_at`, `undone_at`, `error` (text)
 
@@ -122,7 +122,7 @@ with Turbo Stream card replacement; enqueues `AssistantProposalJob` for apply/un
     category row attrs; `replace_and_destroy!(target)`.
   - merchant_merge: snapshot per-txn old `merchant_id` + full source merchant rows;
     `Merchant::Merger#merge!`.
-- **Undo (single DB transaction):** restore from `changes`; per-record conflict rule —
+- **Undo (single DB transaction):** restore from `changes_journal`; per-record conflict rule —
   if current value ≠ value we set at apply, skip the record and count it; recreate
   destroyed categories/merchants first (new rows, original attrs; ids may differ — restore
   mapping handled via the snapshot). Result summary stored on the proposal.
