@@ -16,7 +16,7 @@ module MessagesHelper
       key
     end
     html = markdown(masked, escape_html: true)
-    placeholders.each { |key, chip| html = html.gsub(key, chip) }
+    placeholders.each { |key, chip| html = html.gsub(key) { chip } }
     html.html_safe
   end
 end

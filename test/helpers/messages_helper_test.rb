@@ -40,4 +40,24 @@ class MessagesHelperTest < ActionView::TestCase
     assert_includes result, "line one"
     assert_includes result, "line two"
   end
+
+  test "does not raise on a label containing a named backreference pattern" do
+    id = SecureRandom.uuid
+    result = nil
+
+    assert_nothing_raised do
+      result = render_message_content("Check @[Evil \\k<x> Label](category:#{id}) please")
+    end
+
+    assert_includes result, "\\k&lt;x&gt;"
+    assert result.html_safe?
+  end
+
+  test "does not corrupt output when a label contains a whole-match backreference pattern" do
+    id = SecureRandom.uuid
+    result = render_message_content("@[Take \\0 all](tag:#{id})")
+
+    assert_includes result, "\\0"
+    assert_not_includes result, "MENTIONCHIP"
+  end
 end
