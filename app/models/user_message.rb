@@ -1,5 +1,5 @@
 class UserMessage < Message
-  ALLOWED_ATTACHMENT_TYPES = %w[image/png image/jpeg image/webp application/pdf].freeze
+  ALLOWED_ATTACHMENT_TYPES = %w[image/png image/jpeg image/webp application/pdf text/csv].freeze
   MAX_ATTACHMENT_BYTES = 10.megabytes
   MAX_ATTACHMENTS = 5
 

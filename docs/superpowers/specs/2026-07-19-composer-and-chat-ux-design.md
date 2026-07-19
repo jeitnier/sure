@@ -123,8 +123,10 @@ send "recategorize everything in @[🧺 Household Goods](category:…) to @[Home
 - `Message has_many_attached :attachments` (Active Storage; no migration beyond what
   AS already has).
 - Validations (on UserMessage create): content types `image/png image/jpeg image/webp
-  application/pdf` (no HEIC — the Anthropic API does not accept it; iPhone clipboard
-  pastes arrive as PNG. A HEIC→JPEG transcode is a possible follow-up.); ≤ **10 MB** each; ≤ **5** attachments per message.
+  application/pdf text/csv` (no HEIC — the Anthropic API does not accept it; iPhone clipboard
+  pastes arrive as PNG. A HEIC→JPEG transcode is a possible follow-up. `text/csv` added
+  2026-07-20 by amendment: macOS/iOS browsers report CSVs as text/csv; the Windows/Excel
+  `application/vnd.ms-excel` quirk is out of scope.); ≤ **10 MB** each; ≤ **5** attachments per message.
   Violations render a form error in the composer, message not created.
 
 ### UI
@@ -142,7 +144,10 @@ send "recategorize everything in @[🧺 Household Goods](category:…) to @[Home
 - `Provider::Anthropic::MessageFormatter`: when the current user turn's message has
   attachments, emit native content blocks alongside the text — `{type: "document",
   source: {type: "base64", media_type: "application/pdf", data: …}}` for PDFs,
-  `{type: "image", …}` for images (media resolved via `attachment.download`, base64).
+  `{type: "image", …}` for images (media resolved via `attachment.download`, base64),
+  and for CSVs a plain-text document block `{type: "document", source: {type: "text",
+  media_type: "text/plain", data: <contents UTF-8 scrubbed>}, title: <filename>}` —
+  no base64 inflation; raw byte size counts toward the payload cap/latch.
   History turns include attachments only for the current turn (token economy); prior
   turns render `[attached: <filename>]` markers in their text.
 - Non-Anthropic providers (OpenAI path): degrade to `[attached: <filename> — provider
