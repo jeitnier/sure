@@ -51,10 +51,14 @@ class AssistantProposal::Resolver
     @target_category =
       case kind
       when "bulk_recategorize"
-        name_or_id = params.fetch("new_category")
+        raise InvalidParams, "new_category required" unless params.key?("new_category")
+        name_or_id = params["new_category"]
         family.categories.find_by(id: name_or_id) || family.categories.find_by(name: name_or_id) # nil => will create
       when "category_merge"
-        params["target_category_id"].presence && family.categories.find(params["target_category_id"])
+        if params["target_category_id"].presence
+          family.categories.find_by(id: params["target_category_id"]) ||
+            raise(InvalidParams, "unknown category id: #{params['target_category_id']}")
+        end
       end
   end
 
@@ -77,7 +81,10 @@ class AssistantProposal::Resolver
   end
 
   def target_merchant
-    @target_merchant ||= family_merchants.find(params.fetch("target_merchant_id"))
+    return @target_merchant if defined?(@target_merchant)
+    raise InvalidParams, "target_merchant_id required" unless params.key?("target_merchant_id")
+    id = params["target_merchant_id"]
+    @target_merchant = family_merchants.find_by(id: id) || raise(InvalidParams, "unknown merchant id: #{id}")
   end
 
   private

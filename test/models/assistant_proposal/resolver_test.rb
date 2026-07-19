@@ -67,6 +67,49 @@ class AssistantProposal::ResolverTest < ActiveSupport::TestCase
     assert_equal 3, r.affected_ids.size
   end
 
+  test "category_merge with unknown target_category_id raises InvalidParams" do
+    assert_raises(AssistantProposal::Resolver::InvalidParams) do
+      AssistantProposal::Resolver.new(family: @family, kind: "category_merge",
+        params: { "source_category_ids" => [ @cat_a.id ], "target_category_id" => "not-a-real-id" }).target_category
+    end
+  end
+
+  test "category_merge with absent target_category_id does not raise and resolves to Uncategorized" do
+    r = AssistantProposal::Resolver.new(family: @family, kind: "category_merge",
+      params: { "source_category_ids" => [ @cat_a.id ] })
+    assert_nil r.target_category
+    preview = r.build_preview
+    assert_equal "Uncategorized", preview["samples"].first["after"]
+  end
+
+  test "merchant_merge with absent target_merchant_id raises InvalidParams" do
+    assert_raises(AssistantProposal::Resolver::InvalidParams) do
+      AssistantProposal::Resolver.new(family: @family, kind: "merchant_merge",
+        params: { "source_merchant_ids" => [ @m1.id ] }).target_merchant
+    end
+  end
+
+  test "merchant_merge with unknown target_merchant_id raises InvalidParams" do
+    assert_raises(AssistantProposal::Resolver::InvalidParams) do
+      AssistantProposal::Resolver.new(family: @family, kind: "merchant_merge",
+        params: { "source_merchant_ids" => [ @m1.id ], "target_merchant_id" => "not-a-real-id" }).target_merchant
+    end
+  end
+
+  test "bulk_recategorize with missing new_category key raises InvalidParams" do
+    assert_raises(AssistantProposal::Resolver::InvalidParams) do
+      AssistantProposal::Resolver.new(family: @family, kind: "bulk_recategorize",
+        params: { "filter" => { "merchant_names" => [ "AMZN Mktp" ] } }).target_category
+    end
+  end
+
+  test "merchant_merge build_preview breakdown groups by merchant name" do
+    r = AssistantProposal::Resolver.new(family: @family, kind: "merchant_merge",
+      params: { "source_merchant_ids" => [ @m1.id ], "target_merchant_id" => @m2.id })
+    preview = r.build_preview
+    assert_equal({ "AMZN Mktp" => 3 }, preview["breakdown"])
+  end
+
   test "over_cap? respects max_records" do
     ENV["ASSISTANT_PROPOSAL_MAX_RECORDS"] = "2"
     r = AssistantProposal::Resolver.new(family: @family, kind: "bulk_recategorize",
