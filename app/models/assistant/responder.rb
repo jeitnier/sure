@@ -129,7 +129,7 @@ class Assistant::Responder
 
     def get_llm_response(streamer:, function_results: [], previous_response_id: nil)
       response = llm.chat_response(
-        message.content,
+        prompt_with_mentions,
         model: message.ai_model,
         instructions: instructions,
         functions: function_tool_caller.function_definitions,
@@ -170,6 +170,10 @@ class Assistant::Responder
 
     def chat
       @chat ||= message.chat
+    end
+
+    def prompt_with_mentions
+      @prompt_with_mentions ||= message.content.to_s + Mention::ContextBuilder.new(message, message.chat.user.family).context
     end
 
     # Memoized fetch — both `chat_message_records` and `openai_messages_payload`
