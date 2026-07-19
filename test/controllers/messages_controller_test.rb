@@ -12,6 +12,33 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to chat_path(@chat, thinking: true)
   end
 
+  test "can create a message with a valid attachment" do
+    blob = ActiveStorage::Blob.create_and_upload!(
+      io: StringIO.new("fake image bytes"), filename: "receipt.png", content_type: "image/png")
+
+    assert_difference -> { UserMessage.count } => 1 do
+      post chat_messages_url(@chat), params: { message: { content: "Hello", ai_model: "gpt-4.1", attachments: [ blob.signed_id ] } }
+    end
+
+    assert_redirected_to chat_path(@chat, thinking: true)
+    created_message = @chat.messages.where(type: "UserMessage").order(:created_at).last
+    assert_equal 1, created_message.attachments.count
+  end
+
+  test "cannot create a message with more than 5 attachments" do
+    blobs = 6.times.map do |i|
+      ActiveStorage::Blob.create_and_upload!(
+        io: StringIO.new("fake"), filename: "f#{i}.png", content_type: "image/png")
+    end
+
+    assert_no_difference -> { UserMessage.count } do
+      post chat_messages_url(@chat), params: { message: { content: "Hello", ai_model: "gpt-4.1", attachments: blobs.map(&:signed_id) } }
+    end
+
+    assert_redirected_to chat_path(@chat)
+    assert flash[:alert].present?
+  end
+
   test "cannot create a message if AI is disabled" do
     @user.update!(ai_enabled: false)
 

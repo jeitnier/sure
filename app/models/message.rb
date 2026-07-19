@@ -1,6 +1,7 @@
 class Message < ApplicationRecord
   belongs_to :chat
   has_many :tool_calls, dependent: :destroy
+  has_many_attached :attachments
 
   enum :status, {
     pending: "pending",

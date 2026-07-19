@@ -1,0 +1,10 @@
+en:
+  activerecord:
+    errors:
+      models:
+        user_message:
+          attributes:
+            attachments:
+              too_many: "cannot exceed %{max} files per message"
+              too_large: "%{filename} exceeds %{max_mb}MB"
+              invalid_type: "%{filename} has an unsupported file type"

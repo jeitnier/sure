@@ -2,4 +2,21 @@
 
 <div id="<%= dom_id(user_message) %>" class="bg-surface-inset px-3 py-2 rounded-lg max-w-[85%] w-fit ml-auto mb-6">
   <div class="prose prose--ai-chat"><%= render_message_content(user_message.content) %></div>
+
+  <% if user_message.attachments.attached? %>
+    <div class="flex flex-wrap gap-2 mt-2">
+      <% user_message.attachments.each do |attachment| %>
+        <% if attachment.image? %>
+          <%= link_to rails_blob_path(attachment, disposition: "inline"), target: "_blank", rel: "noopener" do %>
+            <%= image_tag attachment.variant(resize_to_limit: [ 240, 240 ]), class: "rounded-lg max-h-40" %>
+          <% end %>
+        <% else %>
+          <%= link_to rails_blob_path(attachment, disposition: "attachment"), target: "_blank", rel: "noopener",
+                class: "flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-inset text-xs text-primary" do %>
+            <%= icon("file-text", size: "sm") %><%= attachment.filename %>
+          <% end %>
+        <% end %>
+      <% end %>
+    </div>
+  <% end %>
 </div>
