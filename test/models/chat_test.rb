@@ -40,6 +40,16 @@ class ChatTest < ActiveSupport::TestCase
     end
   end
 
+  test "start! attaches files to the initial user message" do
+    blob = ActiveStorage::Blob.create_and_upload!(
+      io: StringIO.new("Total\n77.64\n"), filename: "orders.csv", content_type: "text/csv")
+
+    chat = @user.chats.start!("Categorize these", model: "gpt-4.1", attachments: [ blob.signed_id ])
+
+    first_message = chat.messages.where(type: "UserMessage").order(:created_at).first
+    assert_equal [ "orders.csv" ], first_message.attachments.map { |a| a.filename.to_s }
+  end
+
   test "creates with default model when model is nil" do
     prompt = "Test prompt"
 

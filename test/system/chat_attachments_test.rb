@@ -125,4 +125,27 @@ class ChatAttachmentsTest < ApplicationSystemTestCase
       assert_not find("[data-chat-target='submit']").disabled?
     end
   end
+
+  test "attachment on the FIRST message of a new chat reaches the created message" do
+    # The new-chat page renders the same composer but under the `chat` form
+    # scope (chats#create -> Chat.start!), not `message` -- a hardcoded
+    # message[attachments][] hidden-input name silently drops the file there
+    # (found live 2026-07-20: uploaded blob left orphaned, model told the
+    # user no file was attached).
+    visit new_chat_path
+
+    assert_difference -> { Chat.count } => 1 do
+      within "#chat-container" do
+        find("[data-attachment-target='fileInput']", visible: :all).attach_file(file_fixture("sample.png"))
+        assert_selector "[data-attachment-target='pending'] [data-chip]", text: /sample\.png/
+
+        find("[data-chat-target='input']").send_keys("categorize the attached file")
+        find("[data-chat-target='submit']").click
+        assert_text "categorize the attached file"
+      end
+    end
+
+    first_message = Chat.order(created_at: :desc).first.messages.where(type: "UserMessage").order(:created_at).first
+    assert_equal [ "sample.png" ], first_message.attachments.map { |a| a.filename.to_s }
+  end
 end
