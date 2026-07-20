@@ -57,7 +57,10 @@
     <p class="text-xs text-primary"><%= t(".applied_at", timestamp: proposal.applied_at&.strftime("%m-%d-%Y %H:%M")) %></p>
     <div class="flex gap-2 mt-2 items-center">
       <%= button_to t(".undo"), undo_assistant_proposal_path(proposal), class: "px-3 py-1.5 text-sm text-secondary border border-secondary rounded-lg cursor-pointer" %>
-      <span class="text-xs text-subdued" title="Coming in v1.1"><%= t(".make_permanent") %></span>
+      <%# "Make permanent" (one-click Rule generation from an applied proposal)
+          is reserved for proposals v1.1 — do not render a dead affordance for
+          it; the arrow-styled span here read as a broken link (operator
+          feedback 2026-07-20). %>
     </div>
   <% when "stale" %>
     <p class="text-xs text-warning"><%= t(".stale_message") %></p>

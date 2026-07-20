@@ -20,7 +20,6 @@ en:
       repreview: "Re-preview"
       working: "Working…"
       applied_at: "Applied %{timestamp}"
-      make_permanent: "Make permanent →"
       stale_message: "Data changed since preview."
       undone_fallback: "Undone."
       discarded: "Discarded."
