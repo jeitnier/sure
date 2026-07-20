@@ -20,7 +20,8 @@ class Provider::Anthropic::MessageFormatterAttachmentsTest < ActiveSupport::Test
     later = UserMessage.create!(chat: @chat, content: "and now?", ai_model: "claude-sonnet-4-5", status: "complete")
     messages = Provider::Anthropic::MessageFormatter.new(prompt: later.content, current_message: later, conversation_history: [ @msg ], function_results: []).build
     history_turn = messages.first
-    assert_includes history_turn[:content].to_s, "[attached: doc.pdf]"
+    assert_includes history_turn[:content].to_s, "[attached: doc.pdf"
+    assert_includes history_turn[:content].to_s, "search_family_files"
     assert_not_includes history_turn[:content].to_s, "base64"
   end
 

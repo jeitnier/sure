@@ -18,6 +18,8 @@ class Assistant::Function::ProposeBulkRecategorize < Assistant::Function
         - transaction_ids: exact transaction ids from get_transactions results. Use this
           when the user targets specific transactions (rows from an attached file, a
           hand-picked subset, or a single transaction) instead of a broad filter.
+          To match a list of known totals, first call get_transactions with its
+          `amounts` filter, then pass the returned ids here — never match amounts by eye.
 
         new_category: target category id or exact name (a new category is created if the name doesn't exist).
       INSTRUCTIONS

@@ -670,4 +670,28 @@ class Transaction::SearchTest < ActiveSupport::TestCase
     assert_includes confirmed_ids, confirmed.entryable.id
     assert_not_includes pending_ids, confirmed.entryable.id
   end
+
+  test "amounts filter matches any listed amount within a cent, ignoring sign" do
+    exact    = create_transaction(account: @checking_account, amount: 77.64)
+    off_cent = create_transaction(account: @checking_account, amount: 97.005) # rounds within tolerance of 97.00
+    income   = create_transaction(account: @checking_account, amount: -20.88) # sign-ignored
+    miss     = create_transaction(account: @checking_account, amount: 50.00)
+
+    ids = Transaction::Search.new(@family, filters: { amounts: [ 77.64, "97.00", 20.88 ] }).transactions_scope.pluck(:id)
+
+    assert_includes ids, exact.entryable.id
+    assert_includes ids, off_cent.entryable.id
+    assert_includes ids, income.entryable.id
+    assert_not_includes ids, miss.entryable.id
+  end
+
+  test "amounts filter composes with other filters" do
+    merchant = @family.merchants.create!(name: "Whatnot")
+    match = create_transaction(account: @checking_account, amount: 77.64, merchant: merchant)
+    create_transaction(account: @checking_account, amount: 77.64) # same amount, no merchant
+
+    ids = Transaction::Search.new(@family, filters: { amounts: [ 77.64 ], merchants: [ "Whatnot" ] }).transactions_scope.pluck(:id)
+
+    assert_equal [ match.entryable.id ], ids
+  end
 end
