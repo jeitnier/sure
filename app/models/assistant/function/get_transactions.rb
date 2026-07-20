@@ -58,6 +58,20 @@ class Assistant::Function::GetTransactions < Assistant::Function
           amount_operator: "less"
         })
         ```
+
+        Matching a known list of totals (e.g. rows from a file the user attached): pass
+        them ALL in one call via `amounts` — the server returns exactly the matching
+        transactions (absolute amount within $0.01 of any listed value). Do NOT page
+        through results matching amounts by eye; use this filter, then pass the returned
+        transaction ids to propose_bulk_recategorize's transaction_ids.
+
+        ```
+        get_transactions({
+          page: 1,
+          merchants: ["Whatnot"],
+          amounts: [77.64, 97.00, 10.64]
+        })
+        ```
       INSTRUCTIONS
     end
   end
@@ -90,6 +104,11 @@ class Assistant::Function::GetTransactions < Assistant::Function
           type: "string",
           description: "Operator for amount (must be used with amount)",
           enum: [ "equal", "less", "greater" ]
+        },
+        amounts: {
+          type: "array",
+          items: { type: "number" },
+          description: "Match transactions whose absolute amount is within $0.01 of ANY listed value. Use for reconciling a list of known totals (e.g. from an attached file) in one call."
         },
         start_date: {
           type: "string",

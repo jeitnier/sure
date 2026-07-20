@@ -49,6 +49,18 @@ class EntrySearch
       query
     end
 
+    # Matches entries whose absolute amount is within a cent of ANY of the
+    # given amounts — the list analogue of apply_amount_filter's "equal"
+    # operator, for reconciling a set of known totals (e.g. rows from an
+    # uploaded file) against transactions in one query.
+    def apply_amounts_filter(scope, amounts)
+      return scope if amounts.blank?
+
+      values = Array(amounts).map { |a| a.to_f.abs }
+      conditions = values.map { "ABS(ABS(entries.amount) - ?) <= 0.01" }.join(" OR ")
+      scope.where(conditions, *values)
+    end
+
     def apply_accounts_filter(scope, accounts, account_ids)
       return scope if accounts.blank? && account_ids.blank?
 

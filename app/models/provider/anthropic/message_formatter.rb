@@ -72,7 +72,7 @@ class Provider::Anthropic::MessageFormatter
     def attachment_marker_suffix(filenames)
       return "" if filenames.blank?
 
-      " [attached: #{filenames.join(', ')}]"
+      " [attached: #{filenames.join(', ')} — content not shown for past turns; call search_family_files to read it]"
     end
 
     # The current turn's content. Plain string when there's no current
