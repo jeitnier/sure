@@ -45,13 +45,13 @@ class Chat < ApplicationRecord
   scope :ordered, -> { order(created_at: :desc) }
 
   class << self
-    def start!(prompt, model:)
+    def start!(prompt, model:, attachments: nil)
       # Ensure we have a valid model by using the default if none provided
       effective_model = model.presence || default_model
 
       create!(
         title: generate_title(prompt),
-        messages: [ UserMessage.new(content: prompt, ai_model: effective_model) ]
+        messages: [ UserMessage.new(content: prompt, ai_model: effective_model, attachments: attachments&.compact_blank) ]
       )
     end
 

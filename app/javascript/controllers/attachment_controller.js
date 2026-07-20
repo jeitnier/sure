@@ -64,7 +64,18 @@ export default class extends Controller {
         chip.querySelector("[data-status]").remove();
         const input = document.createElement("input");
         input.type = "hidden";
-        input.name = "message[attachments][]";
+        // The composer renders under two form scopes: `message` mid-chat
+        // (messages#create) and `chat` on the new-chat page (chats#create ->
+        // Chat.start!). Derive the scope from a sibling field so the signed
+        // id lands under whichever param root the controller actually reads
+        // — hardcoding message[...] silently dropped first-message uploads.
+        const scoped = chip
+          .closest("form")
+          ?.querySelector('[name$="[ai_model]"]');
+        const scope = scoped
+          ? scoped.name.slice(0, -"[ai_model]".length)
+          : "message";
+        input.name = `${scope}[attachments][]`;
         input.value = blob.signed_id;
         chip.appendChild(input);
         this.inflight -= 1;

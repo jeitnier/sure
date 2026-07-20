@@ -20,6 +20,18 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to chat_path(Chat.order(created_at: :desc).first, thinking: true)
   end
 
+  test "creates chat whose first message keeps its attachments" do
+    blob = ActiveStorage::Blob.create_and_upload!(
+      io: StringIO.new("Total\n77.64\n97.00\n"), filename: "orders.csv", content_type: "text/csv")
+
+    assert_difference("Chat.count") do
+      post chats_url, params: { chat: { content: "Categorize these", ai_model: "gpt-4.1", attachments: [ blob.signed_id ] } }
+    end
+
+    first_message = Chat.order(created_at: :desc).first.messages.where(type: "UserMessage").order(:created_at).first
+    assert_equal [ "orders.csv" ], first_message.attachments.map { |a| a.filename.to_s }
+  end
+
   test "shows chat" do
     get chat_url(chats(:one))
     assert_response :success

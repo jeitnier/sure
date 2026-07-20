@@ -17,7 +17,7 @@ class ChatsController < ApplicationController
   end
 
   def create
-    @chat = Current.user.chats.start!(chat_params[:content], model: chat_params[:ai_model])
+    @chat = Current.user.chats.start!(chat_params[:content], model: chat_params[:ai_model], attachments: chat_params[:attachments])
     set_last_viewed_chat(@chat)
     redirect_to chat_path(@chat, thinking: true)
   end
@@ -60,6 +60,6 @@ class ChatsController < ApplicationController
     end
 
     def chat_params
-      params.require(:chat).permit(:title, :content, :ai_model)
+      params.require(:chat).permit(:title, :content, :ai_model, attachments: [])
     end
 end
