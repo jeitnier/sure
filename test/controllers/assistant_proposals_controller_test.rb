@@ -20,6 +20,32 @@ class AssistantProposalsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "applying", @proposal.reload.status
   end
 
+  test "apply and undo turbo_stream responses carry no card markup" do
+    # The APPLYING->APPLIED (and UNDOING->UNDONE) card updates arrive over the
+    # single ordered Turbo Stream socket. An inline card in the HTTP response
+    # travels on a separate connection with no ordering guarantee against the
+    # job's terminal broadcast -- observed live 2026-07-20: the job finished
+    # 34ms after the response was sent, its APPLIED broadcast reached the
+    # browser first, and the response's stale APPLYING card overwrote it,
+    # leaving the card stuck at "Working..." until a manual refresh.
+    post apply_assistant_proposal_path(@proposal), as: :turbo_stream
+    assert_response :no_content
+    assert response.body.blank?, "apply response must not carry a card"
+
+    @proposal.update!(status: "applied")
+    post undo_assistant_proposal_path(@proposal), as: :turbo_stream
+    assert_response :no_content
+    assert response.body.blank?, "undo response must not carry a card"
+  end
+
+  test "discard turbo_stream response still carries the card inline" do
+    # discard/repreview are synchronous -- the rendered state is final, so the
+    # inline card is safe and keeps working even without a live socket.
+    post discard_assistant_proposal_path(@proposal), as: :turbo_stream
+    assert_response :success
+    assert_includes response.body, @proposal.dom_target
+  end
+
   test "discard from proposed" do
     post discard_assistant_proposal_path(@proposal)
     assert_equal "discarded", @proposal.reload.status

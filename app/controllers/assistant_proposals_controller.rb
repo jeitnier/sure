@@ -42,7 +42,16 @@ class AssistantProposalsController < ApplicationController
     def transition_and_enqueue(status, action)
       @proposal.transition_to!(status)
       AssistantProposalJob.perform_later(@proposal.id, action)
-      respond_with_card
+      # No inline card here: transition_to! already broadcast the intermediate
+      # state over the chat's Turbo Stream socket, and the job broadcasts the
+      # terminal state on the same ordered channel. An inline card would race
+      # that broadcast on a separate connection — when the job wins (observed
+      # live: 34ms), the response's stale card overwrites the terminal state
+      # and the card sticks at "Working…" until a manual refresh.
+      respond_to do |format|
+        format.turbo_stream { head :no_content }
+        format.html { redirect_back fallback_location: chat_path(@proposal.chat) }
+      end
     rescue AssistantProposal::InvalidTransition
       head :unprocessable_entity
     end
