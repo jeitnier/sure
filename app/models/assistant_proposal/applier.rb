@@ -41,6 +41,8 @@ class AssistantProposal::Applier
         when "merchant_merge"    then apply_merchant_merge(resolver)
         end
 
+      bust_entries_cache!(journal.fetch("records", {}).keys)
+
       proposal.update!(status: "applied", changes_journal: journal, applied_at: Time.current)
     end
   end
@@ -82,11 +84,26 @@ class AssistantProposal::Applier
 
       summary = "#{restored} restored, #{skipped} skipped (changed after apply or missing)"
 
+      bust_entries_cache!(journal.fetch("records", {}).keys)
+
       proposal.update!(status: "undone", changes_journal: journal.merge("undo_summary" => summary), undone_at: Time.current)
     end
   end
 
   private
+    # The domain writes above go through update_all/update_columns on
+    # TRANSACTIONS and never touch the paired entries rows — but the UI's
+    # cache keys derive from entries.maximum(:updated_at)
+    # (Family#entries_cache_version, Transaction::Search#totals). Without
+    # this bump an applied change stays invisible on the transactions page
+    # (count pinned at its pre-apply value through hard refreshes) until an
+    # unrelated sync happens to touch an entry. Observed live 2026-07-20.
+    def bust_entries_cache!(txn_ids)
+      return if txn_ids.blank?
+
+      Entry.where(entryable_type: "Transaction", entryable_id: txn_ids).update_all(updated_at: Time.current)
+    end
+
     def lock_category_on!(ids)
       Transaction.where(id: ids).update_all([
         "locked_attributes = COALESCE(locked_attributes, '{}'::jsonb) || ?::jsonb",
