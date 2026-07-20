@@ -40,6 +40,32 @@ class AssistantProposalJobTest < ActiveJob::TestCase
     assert @txns.last.reload.locked_attributes.key?("category_id"), "category_id should be locked even when locked_attributes started NULL"
   end
 
+  test "apply and undo bump affected entries so entries-keyed caches invalidate" do
+    # Applier writes go through update_all/update_columns on TRANSACTIONS,
+    # which never touches the paired entries rows — but the transactions
+    # page's totals cache and Family#entries_cache_version both key on
+    # entries.maximum(:updated_at). Observed live 2026-07-20: an applied
+    # 20-record recategorization stayed invisible in the UI (count pinned at
+    # its pre-apply value) through hard refreshes because no entry moved.
+    p = make_proposal(kind: "bulk_recategorize",
+      params: { "filter" => { "merchant_names" => [ "AMZN" ] }, "new_category" => "CatB" })
+    stale_ts = 2.days.ago
+    Entry.where(entryable_id: @txns.map(&:id)).update_all(updated_at: stale_ts)
+
+    AssistantProposalJob.perform_now(p.id, "apply")
+    @txns.each do |t|
+      assert t.entry.reload.updated_at > stale_ts, "apply must bump entry updated_at"
+    end
+
+    p.reload.transition_to!("undoing") if p.reload.status == "applied"
+    Entry.where(entryable_id: @txns.map(&:id)).update_all(updated_at: stale_ts)
+    AssistantProposalJob.perform_now(p.id, "undo")
+    assert_equal "undone", p.reload.status
+    @txns.each do |t|
+      assert t.entry.reload.updated_at > stale_ts, "undo must bump entry updated_at"
+    end
+  end
+
   test "apply with drift marks stale and writes nothing" do
     p = make_proposal(kind: "bulk_recategorize",
       params: { "filter" => { "merchant_names" => [ "AMZN" ] }, "new_category" => "CatB" })
