@@ -155,6 +155,34 @@ class TransactionsTest < ApplicationSystemTestCase
     assert_selection_count(0)
   end
 
+  test "bulk edit category and merchant pickers are searchable" do
+    transaction_checkbox(@transactions.first).check
+    transaction_checkbox(@transactions.second).check
+    assert_selection_count(2)
+
+    find("#entry-selection-bar a[href='#{new_transactions_bulk_update_path}']").click
+
+    within "#bulk_transaction_edit_drawer" do
+      category_input, merchant_input = page.all("input[role='combobox']", minimum: 2)
+
+      category_input.click
+      category_input.send_keys("Food")
+      find("li[role='option']", text: "Food & Drink").click
+
+      merchant_input.click
+      merchant_input.send_keys("Ama")
+      find("li[role='option']", text: "Amazon").click
+
+      click_on "Save"
+    end
+
+    assert_selection_count(0)
+    [ @transactions.first, @transactions.second ].each do |entry|
+      assert_equal categories(:food_and_drink).id, entry.entryable.reload.category_id
+      assert_equal merchants(:amazon).id, entry.entryable.merchant_id
+    end
+  end
+
   test "can select and deselect individual transactions" do
     transaction_checkbox(@transactions.first).check
     assert_selection_count(1)
