@@ -4,6 +4,7 @@ class Provider::Anthropic::ChatConfig
     instructions: nil,
     functions: [],
     function_results: [],
+    prior_function_results: [],
     conversation_history: [],
     current_message: nil,
     default_max_tokens: 4096
@@ -11,7 +12,11 @@ class Provider::Anthropic::ChatConfig
     @prompt = prompt
     @instructions = instructions
     @functions = functions
-    @function_results = function_results
+    # No server-side chain on Anthropic: earlier tool rounds from this turn
+    # must replay ahead of the current round or the model loses its in-turn
+    # memory. The formatter renders the concatenation as one parallel
+    # tool_use/tool_result pair, which Anthropic accepts.
+    @function_results = Array(prior_function_results) + Array(function_results)
     @conversation_history = conversation_history
     @current_message = current_message
     @default_max_tokens = default_max_tokens

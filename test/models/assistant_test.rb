@@ -243,6 +243,97 @@ class AssistantTest < ActiveSupport::TestCase
     assert_equal [ "get_accounts", "get_income_statement" ], function_names
   end
 
+  test "each follow-up round carries the turn's prior tool results so the model keeps its in-turn memory" do
+    # Root cause of the 2026-07-25 runaway loop: on providers without
+    # server-side chaining (Anthropic, generic OpenAI-compatible) each round
+    # only received the CURRENT round's results, so a paginated read lost
+    # earlier pages every round and the model re-fetched them forever.
+    @assistant.expects(:get_model_provider).with("gpt-4.1").returns(@provider).once
+
+    Assistant::Function::GetAccounts.any_instance.stubs(:call).returns("accounts").once
+    Assistant::Function::GetIncomeStatement.any_instance.stubs(:call).returns("income").once
+
+    call1_chunk = provider_response_chunk(
+      id: "1", model: "gpt-4.1", messages: [],
+      function_requests: [ provider_function_request(id: "1", call_id: "1", function_name: "get_accounts", function_args: "{}") ]
+    )
+    call2_chunk = provider_response_chunk(
+      id: "2", model: "gpt-4.1", messages: [],
+      function_requests: [ provider_function_request(id: "2", call_id: "2", function_name: "get_income_statement", function_args: "{}") ]
+    )
+    call3_chunk = provider_response_chunk(
+      id: "3", model: "gpt-4.1", messages: [ provider_message(id: "1", text: "done") ], function_requests: []
+    )
+
+    captured = []
+    invocation = 0
+    @provider.expects(:chat_response).times(3).with do |_prompt, **options|
+      invocation += 1
+      captured << { function_results: options[:function_results], prior_function_results: options[:prior_function_results] }
+      case invocation
+      when 1 then options[:streamer].call(call1_chunk)
+      when 2 then options[:streamer].call(call2_chunk)
+      when 3 then options[:streamer].call(call3_chunk)
+      end
+      true
+    end.returns(
+      provider_success_response(call1_chunk.data),
+      provider_success_response(call2_chunk.data),
+      provider_success_response(call3_chunk.data)
+    )
+
+    @assistant.respond_to(@message)
+
+    assert_equal [], Array(captured[0][:function_results])
+    assert_equal [], Array(captured[0][:prior_function_results])
+
+    assert_equal [ "get_accounts" ], captured[1][:function_results].map { |r| r[:name] }
+    assert_equal [], Array(captured[1][:prior_function_results])
+
+    # Round 3 must still see round 1's result — this is the in-turn memory.
+    assert_equal [ "get_income_statement" ], captured[2][:function_results].map { |r| r[:name] }
+    assert_equal [ "get_accounts" ], captured[2][:prior_function_results].map { |r| r[:name] }
+  end
+
+  test "a repeated-identical-tool-call loop is cut off early with a loop error" do
+    @assistant.expects(:get_model_provider).with("gpt-4.1").returns(@provider).once
+
+    Assistant::Function::GetAccounts.any_instance.stubs(:call).returns("accounts")
+
+    chunks = (1..3).map do |i|
+      provider_response_chunk(
+        id: i.to_s, model: "gpt-4.1", messages: [],
+        function_requests: [ provider_function_request(id: i.to_s, call_id: i.to_s, function_name: "get_accounts", function_args: "{}") ]
+      )
+    end
+
+    captured_error = nil
+    @chat.expects(:add_error).with do |e|
+      captured_error = e
+      true
+    end.once
+
+    pending_message = AssistantMessage.create!(
+      chat: @chat, content: "", ai_model: @message.ai_model, status: :pending
+    )
+
+    invocation = 0
+    @provider.stubs(:chat_response).with do |_prompt, **options|
+      invocation += 1
+      options[:streamer].call(chunks[invocation - 1]) if invocation <= 3
+      true
+    end.returns(*chunks.map { |c| provider_success_response(c.data) })
+
+    @assistant.respond_to(@message, assistant_message: pending_message)
+
+    # Round 2 repeats round 1's exact call (tolerated once — a re-read after
+    # a write can be legitimate); round 3 repeats again — loop, cut off
+    # without burning the remaining iteration budget.
+    assert_instance_of Assistant::Responder::ToolCallLoopError, captured_error
+    assert_kind_of Assistant::Responder::ToolCallLimitError, captured_error
+    assert_equal 3, invocation, "loop must be cut at the second full-repeat round"
+  end
+
   test "surfaces error and does not leave message pending when tool-call cap is exceeded" do
     @assistant.expects(:get_model_provider).with("gpt-4.1").returns(@provider).once
 

@@ -4,6 +4,13 @@ class Assistant::Responder
   # an actionable message instead of a perpetual "Thinking…" indicator (#2241).
   class ToolCallLimitError < StandardError; end
 
+  # Raised when the model requests only tool calls it has already made this
+  # turn, for the second round in a row — a runaway loop (observed live
+  # 2026-07-25: pages 1-6 re-fetched identically every round until the cap).
+  # One full-repeat round is tolerated: a re-read after a write is legitimate.
+  # Subclasses ToolCallLimitError so every existing rescue path handles it.
+  class ToolCallLoopError < ToolCallLimitError; end
+
   # Cap on follow-up tool-roundtrips per user turn. The first response (which
   # may itself request tools) is NOT counted — this is the number of
   # additional LLM-tool roundtrips after that. Capped to keep recursive
@@ -65,17 +72,16 @@ class Assistant::Responder
     # dropped second-round function requests, leaving the assistant message
     # in "pending" forever (#2241).
     #
-    # Note: each recursive call sends only the CURRENT round's
-    # function_results to the LLM. On OpenAI's Responses API this is correct
-    # — `previous_response_id` chains server-side state. On the generic
-    # OpenAI-compatible path (LiteLLM / Ollama / LM Studio) and Anthropic,
-    # there's no server-side chain, so the next-round LLM doesn't see prior
-    # in-turn tool results. Provider-aware accumulation belongs in a
-    # follow-up PR — fixing it here would require either branching on the
-    # provider in this generic class or replaying outputs with stale
-    # call_ids on the Responses API, neither of which fits the scope of
-    # the original bug fix.
-    def handle_follow_up_response(response, iteration:)
+    # Each recursive call sends the CURRENT round's function_results plus,
+    # separately, the accumulated `prior_function_results` from earlier
+    # rounds this turn. Providers without a server-side conversation chain
+    # (Anthropic, generic OpenAI-compatible) replay prior + current so the
+    # model keeps its in-turn memory — without this, a paginated read lost
+    # earlier pages every round and the model re-fetched them in a runaway
+    # loop (observed live 2026-07-25). OpenAI's Responses API ignores the
+    # prior results: `previous_response_id` already chains server-side, and
+    # replaying outputs with stale call_ids there is an error.
+    def handle_follow_up_response(response, iteration:, prior_results: [])
       next_response = nil
       next_response_handled = false
 
@@ -89,6 +95,7 @@ class Assistant::Responder
         end
       end
 
+      record_fulfilled_requests(response.function_requests)
       function_tool_calls = function_tool_caller.fulfill_requests(response.function_requests)
 
       emit(:response, {
@@ -96,9 +103,12 @@ class Assistant::Responder
         function_tool_calls: function_tool_calls
       })
 
+      current_results = function_tool_calls.map(&:to_result)
+
       sync_response = get_llm_response(
         streamer: streamer,
-        function_results: function_tool_calls.map(&:to_result),
+        function_results: current_results,
+        prior_function_results: prior_results,
         previous_response_id: response.id
       )
 
@@ -107,14 +117,39 @@ class Assistant::Responder
       return unless next_response
 
       if next_response.function_requests.any?
+        guard_against_repeat_loop!(next_response.function_requests)
         if iteration >= max_tool_call_iterations
           raise ToolCallLimitError,
                 I18n.t("chat.errors.tool_call_limit_exceeded", max: max_tool_call_iterations)
         end
-        handle_follow_up_response(next_response, iteration: iteration + 1)
+        handle_follow_up_response(next_response, iteration: iteration + 1, prior_results: prior_results + current_results)
       else
         emit(:response, { id: next_response.id })
       end
+    end
+
+    def record_fulfilled_requests(requests)
+      requests.each { |request| fulfilled_request_signatures << request_signature(request) }
+    end
+
+    # Cuts a runaway loop at the SECOND round whose requests are all exact
+    # repeats of calls already fulfilled this turn. A single full-repeat
+    # round passes: re-reading the same query after a write is legitimate.
+    def guard_against_repeat_loop!(requests)
+      return unless requests.all? { |request| fulfilled_request_signatures.include?(request_signature(request)) }
+
+      @full_repeat_rounds = @full_repeat_rounds.to_i + 1
+      return if @full_repeat_rounds < 2
+
+      raise ToolCallLoopError, I18n.t("chat.errors.tool_call_loop")
+    end
+
+    def request_signature(request)
+      "#{request.function_name}:#{request.function_args}"
+    end
+
+    def fulfilled_request_signatures
+      @fulfilled_request_signatures ||= Set.new
     end
 
     def max_tool_call_iterations
@@ -127,13 +162,14 @@ class Assistant::Responder
       end
     end
 
-    def get_llm_response(streamer:, function_results: [], previous_response_id: nil)
+    def get_llm_response(streamer:, function_results: [], prior_function_results: [], previous_response_id: nil)
       response = llm.chat_response(
         prompt_with_mentions,
         model: message.ai_model,
         instructions: instructions,
         functions: function_tool_caller.function_definitions,
         function_results: function_results,
+        prior_function_results: prior_function_results,
         messages: openai_messages_payload,
         conversation_history: chat_message_records,
         current_message: message,

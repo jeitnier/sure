@@ -7,4 +7,5 @@ en:
       misconfigured: "The AI provider is not configured correctly. Please contact your administrator."
       no_response: "The assistant didn't respond. The background worker may be down or AI may not be fully configured. Please try again."
       tool_call_limit_exceeded: "Assistant reached the per-turn tool-call limit of %{max}. Try a more specific question, or raise ASSISTANT_MAX_TOOL_CALL_ITERATIONS if you're self-hosting against a local model."
+      tool_call_loop: "Assistant got stuck repeating the same data lookup and was stopped. Please retry, or ask for a smaller piece of the task."
       default: "Failed to generate a response. Please try again."
