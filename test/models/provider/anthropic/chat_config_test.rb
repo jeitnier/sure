@@ -13,6 +13,27 @@ class Provider::Anthropic::ChatConfigTest < ActiveSupport::TestCase
     assert_nil req[:tools]
   end
 
+  test "prior_function_results replay before the current round's results" do
+    prior   = { call_id: "c1", name: "get_transactions", arguments: "{\"page\":1}", output: "page one" }
+    current = { call_id: "c2", name: "get_transactions", arguments: "{\"page\":2}", output: "page two" }
+
+    config = Provider::Anthropic::ChatConfig.new(
+      prompt: "dedup these",
+      prior_function_results: [ prior ],
+      function_results: [ current ]
+    )
+
+    messages = config.build_request(model: "claude-sonnet-4-6")[:messages]
+
+    assistant_turn = messages.find { |m| m[:role] == "assistant" }
+    tool_use_ids = assistant_turn[:content].map { |b| b[:id] }
+    assert_equal [ "c1", "c2" ], tool_use_ids, "prior round's tool_use must replay ahead of the current round's"
+
+    result_turn = messages.last
+    assert_equal "user", result_turn[:role]
+    assert_equal [ "c1", "c2" ], result_turn[:content].map { |b| b[:tool_use_id] }
+  end
+
   test "honors caller-provided default_max_tokens" do
     config = Provider::Anthropic::ChatConfig.new(prompt: "hi", default_max_tokens: 8192)
 

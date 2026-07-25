@@ -263,6 +263,7 @@ class Provider::Openai < Provider
     instructions: nil,
     functions: [],
     function_results: [],
+    prior_function_results: [],
     messages: nil,
     conversation_history: [],
     current_message: nil,
@@ -280,7 +281,10 @@ class Provider::Openai < Provider
     if supports_responses_endpoint?
       # Native path uses the Responses API which chains history via
       # `previous_response_id`; it does NOT need (and must not receive)
-      # inline message history in the input payload.
+      # inline message history in the input payload. That chain also covers
+      # this turn's earlier tool rounds, so prior_function_results is
+      # deliberately dropped here — replaying outputs with stale call_ids
+      # on the Responses API is an error.
       native_chat_response(
         prompt: prompt,
         model: model,
@@ -300,6 +304,7 @@ class Provider::Openai < Provider
         instructions: instructions,
         functions: functions,
         function_results: function_results,
+        prior_function_results: prior_function_results,
         messages: messages,
         streamer: streamer,
         session_id: session_id,
@@ -444,6 +449,7 @@ class Provider::Openai < Provider
       instructions: nil,
       functions: [],
       function_results: [],
+      prior_function_results: [],
       messages: nil,
       streamer: nil,
       session_id: nil,
@@ -455,6 +461,7 @@ class Provider::Openai < Provider
           prompt: prompt,
           instructions: instructions,
           function_results: function_results,
+          prior_function_results: prior_function_results,
           messages: messages
         )
 
@@ -514,7 +521,12 @@ class Provider::Openai < Provider
       end
     end
 
-    def build_generic_messages(prompt:, instructions: nil, function_results: [], messages: nil)
+    def build_generic_messages(prompt:, instructions: nil, function_results: [], prior_function_results: [], messages: nil)
+      # No server-side chain on this path: earlier tool rounds from this turn
+      # replay ahead of the current round so the model keeps its in-turn
+      # memory. Rendered below as one assistant tool_calls block + tool
+      # messages, which the chat-completions shape accepts.
+      function_results = Array(prior_function_results) + Array(function_results)
       payload = []
 
       # Add system message if instructions present
