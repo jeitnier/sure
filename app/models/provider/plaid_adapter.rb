@@ -98,7 +98,7 @@ class Provider::PlaidAdapter < Provider::Base
           required: false,
           env_key: "PLAID_ENV",
           default: "sandbox",
-          description: "Plaid environment: sandbox, development, or production"
+          description: "Plaid environment: sandbox or production (case-insensitive). Plaid retired the separate development environment."
 
     # Plaid requires both client_id and secret to be configured
     configured_check { get_value(:client_id).present? && get_value(:secret).present? }
@@ -127,9 +127,9 @@ class Provider::PlaidAdapter < Provider::Base
   def self.reload_configuration
     client_id = config_value(:client_id).presence || ENV["PLAID_CLIENT_ID"]
     secret = config_value(:secret).presence || ENV["PLAID_SECRET"]
-    environment = config_value(:environment).presence || ENV["PLAID_ENV"] || "sandbox"
+    environment = normalize_environment(config_value(:environment).presence || ENV["PLAID_ENV"])
 
-    if client_id.present? && secret.present?
+    if client_id.present? && secret.present? && environment.present?
       Rails.application.config.plaid = Plaid::Configuration.new
       Rails.application.config.plaid.server_index = Plaid::Configuration::Environment[environment]
       Rails.application.config.plaid.api_key["PLAID-CLIENT-ID"] = client_id
@@ -137,6 +137,24 @@ class Provider::PlaidAdapter < Provider::Base
     else
       Rails.application.config.plaid = nil
     end
+  end
+
+  # Plaid's Environment map is keyed by lowercase strings, so a value entered
+  # as "Sandbox" or "Production" in the settings UI silently resolved to nil
+  # and produced a Configuration with server_index = nil — the provider looked
+  # configured but could reach nothing. Normalize case/whitespace, and refuse
+  # to build a config at all for an unrecognized value so the failure is
+  # visible rather than mysterious.
+  def self.normalize_environment(value)
+    normalized = value.to_s.strip.downcase
+    return "sandbox" if normalized.blank?
+    return normalized if Plaid::Configuration::Environment.key?(normalized)
+
+    Rails.logger.error(
+      "[Plaid] Unrecognized environment #{value.inspect}; expected one of " \
+      "#{Plaid::Configuration::Environment.keys.join(', ')}. Plaid will stay disabled."
+    )
+    nil
   end
 
   def sync_path
