@@ -27,6 +27,20 @@ class PlaidItem < ApplicationRecord
   scope :ordered, -> { order(created_at: :desc) }
   scope :needs_update, -> { where(status: :requires_update) }
 
+  # Plaid clients raise ApiError with no response body (network-layer
+  # failures, early aborts) and occasionally with a non-JSON body (an HTML
+  # error page from a gateway). Parsing either one unguarded raises out of the
+  # error handler and REPLACES the real Plaid error, so the actual cause never
+  # reaches the Sync record — the user just sees "no implicit conversion of
+  # nil into String". Always go through here so handlers can inspect the body
+  # without risking that.
+  def self.parse_error_body(error)
+    parsed = JSON.parse(error.response_body.to_s)
+    parsed.is_a?(Hash) ? parsed : {}
+  rescue JSON::ParserError
+    {}
+  end
+
   # Get accounts from both new and legacy systems
   def accounts
     # Preload associations to avoid N+1 queries
@@ -45,11 +59,7 @@ class PlaidItem < ApplicationRecord
       access_token: access_token
     )
   rescue Plaid::ApiError => e
-    error_body = begin
-      JSON.parse(e.response_body.to_s)
-    rescue JSON::ParserError
-      {}
-    end
+    error_body = self.class.parse_error_body(e)
 
     if error_body["error_code"] == "ITEM_NOT_FOUND"
       # Mark the connection as invalid but don't auto-delete. The caller
@@ -127,7 +137,7 @@ class PlaidItem < ApplicationRecord
 
       plaid_provider.remove_item(access_token)
     rescue Plaid::ApiError => e
-      json_response = JSON.parse(e.response_body)
+      json_response = self.class.parse_error_body(e)
       error_code = json_response["error_code"]
 
       # Continue with deletion if:

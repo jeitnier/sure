@@ -49,4 +49,34 @@ class PlaidItem::ImporterTest < ActiveSupport::TestCase
 
     @importer.import
   end
+
+  # Observed live 2026-07-26 on a freshly linked Chase item: Plaid raised an
+  # ApiError with no response body (network-layer failure / early abort), and
+  # JSON.parse(nil) raised "no implicit conversion of nil into String" from
+  # inside the error handler. That TypeError replaced the real Plaid error on
+  # the way up to the Sync record, so the actual cause was never recorded.
+  test "re-raises the original Plaid error when the response body is nil" do
+    plaid_error = Plaid::ApiError.new(code: 500, response_body: nil)
+    @mock_provider.expects(:get_item).raises(plaid_error)
+
+    raised = assert_raises(Plaid::ApiError) { @importer.import }
+    assert_same plaid_error, raised, "the original Plaid error must survive the handler"
+  end
+
+  test "re-raises the original Plaid error when the response body is not JSON" do
+    plaid_error = Plaid::ApiError.new(code: 502, response_body: "<html>502 Bad Gateway</html>")
+    @mock_provider.expects(:get_item).raises(plaid_error)
+
+    raised = assert_raises(Plaid::ApiError) { @importer.import }
+    assert_same plaid_error, raised, "the original Plaid error must survive the handler"
+  end
+
+  test "still marks the item as requires_update when the body is parseable" do
+    error_response = { "error_code" => "ITEM_LOGIN_REQUIRED", "error_message" => "login required" }.to_json
+    @mock_provider.expects(:get_item).raises(Plaid::ApiError.new(code: 400, response_body: error_response))
+
+    @importer.import
+
+    assert_predicate @plaid_item.reload, :requires_update?
+  end
 end
