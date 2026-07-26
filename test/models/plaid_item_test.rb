@@ -45,6 +45,27 @@ class PlaidItemTest < ActiveSupport::TestCase
     end
   end
 
+  test "destroys item even when Plaid returns an error with no response body" do
+    # Same nil-body failure mode as get_update_link_token below. Here the
+    # unguarded JSON.parse would raise TypeError out of the destroy callback,
+    # aborting the delete and leaving the item stuck in pending_deletion.
+    @plaid_provider.expects(:remove_item).raises(Plaid::ApiError.new(code: 500, response_body: nil))
+
+    assert_difference "PlaidItem.count", -1 do
+      @plaid_item.destroy
+    end
+  end
+
+  test "destroys item even when Plaid returns a non-JSON response body" do
+    @plaid_provider.expects(:remove_item).raises(
+      Plaid::ApiError.new(code: 502, response_body: "<html>502 Bad Gateway</html>")
+    )
+
+    assert_difference "PlaidItem.count", -1 do
+      @plaid_item.destroy
+    end
+  end
+
   test "get_update_link_token marks item as requires_update and returns nil on ITEM_NOT_FOUND" do
     error_response = { "error_code" => "ITEM_NOT_FOUND", "error_message" => "not found" }.to_json
     Family.any_instance.expects(:get_link_token).raises(

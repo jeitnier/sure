@@ -17,7 +17,7 @@ class PlaidItem::Importer
     # All errors that should halt the import should be re-raised after handling
     # These errors will propagate up to the Sync record and mark it as failed.
     def handle_plaid_error(error)
-      error_body = JSON.parse(error.response_body)
+      error_body = PlaidItem.parse_error_body(error)
 
       case error_body["error_code"]
       when "ITEM_LOGIN_REQUIRED"
